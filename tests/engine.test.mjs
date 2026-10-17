@@ -1,0 +1,579 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { pdfLib } from "../src/pdf/vendors.js";
+import { assemble, inspect } from "../src/pdf/engine.js";
+import { createPage } from "../src/core/model.js";
+const lib = await pdfLib();
+const fontBytes = await Promise.all(
+  ["Regular", "Bold"].map(
+    async (weight) =>
+      new Uint8Array(
+        await readFile(
+          new URL(`../assets/NotoSans-${weight}.ttf`, import.meta.url),
+        ),
+      ),
+  ),
+);
+async function fixture() {
+  const doc = await lib.PDFDocument.create();
+  const first = doc.addPage([300, 400]),
+    second = doc.addPage([400, 300]);
+  first.setCropBox(10, 20, 280, 360);
+  second.setRotation(lib.degrees(90));
+  const form = doc.getForm();
+  const field = form.createTextField("shared");
+  field.setText("Ausgangswert");
+  field.addToPage(first, { x: 30, y: 50, width: 180, height: 25 });
+  field.addToPage(second, { x: 30, y: 50, width: 180, height: 25 });
+  const check = form.createCheckBox("check");
+  check.addToPage(first, { x: 40, y: 100, width: 15, height: 15 });
+  const radio = form.createRadioGroup("radio");
+  radio.addOptionToPage("A", first, { x: 60, y: 100, width: 15, height: 15 });
+  radio.addOptionToPage("B", second, { x: 60, y: 100, width: 15, height: 15 });
+  const dropdown = form.createDropdown("select");
+  dropdown.addOptions(["Eins", "Zwei"]);
+  dropdown.addToPage(first, { x: 30, y: 140, width: 120, height: 25 });
+  const list = form.createOptionList("list");
+  list.addOptions(["Rot", "Grün"]);
+  list.enableMultiselect();
+  list.addToPage(second, { x: 30, y: 140, width: 120, height: 70 });
+  return new Uint8Array(await doc.save());
+}
+async function makePayload() {
+  const data = await fixture(),
+    info = await inspect(data);
+  assert.equal(
+    info.pages[1].widgets.find((widget) => widget.type === "radio").on,
+    "B",
+  );
+  return {
+    fontBytes,
+    sources: [{ id: "source", data }],
+    document: {
+      pages: info.pages.map((page, i) =>
+        createPage("source", i, page, "group"),
+      ),
+      formValues: {
+        "group:shared": "Prüfung äöü ß Ω",
+        "group:check": true,
+        "group:radio": "B",
+        "group:select": ["Zwei"],
+        "group:list": ["Rot", "Grün"],
+      },
+    },
+    options: {},
+  };
+}
+test("AcroForm wird nach Umordnen mit Ressourcen und allen Feldtypen übernommen", async () => {
+  const payload = await makePayload();
+  payload.document.pages.reverse();
+  const { data } = await assemble(payload);
+  const output = await lib.PDFDocument.load(data);
+  const form = output.getForm();
+  assert.equal(output.getPageCount(), 2);
+  assert.equal(output.getPage(0).getRotation().angle, 90);
+  assert.equal(form.getTextField("group.shared").getText(), "Prüfung äöü ß Ω");
+  assert.equal(
+    form.getTextField("group.shared").acroField.getWidgets().length,
+    2,
+  );
+  assert.equal(form.getCheckBox("group.check").isChecked(), true);
+  assert.equal(form.getRadioGroup("group.radio").getSelected(), "B");
+  assert.deepEqual(form.getDropdown("group.select").getSelected(), ["Zwei"]);
+  assert.deepEqual(form.getOptionList("group.list").getSelected(), [
+    "Rot",
+    "Grün",
+  ]);
+  for (const field of form.getFields())
+    for (const widget of field.acroField.getWidgets())
+      assert.ok(output.getPages().some((page) => widget.P() === page.ref));
+});
+test("Aufteilen entfernt Widgets anderer Seiten und Duplikate bleiben unabhängig", async () => {
+  const payload = await makePayload();
+  payload.document.pages = payload.document.pages.slice(0, 1);
+  const first = structuredClone(payload.document.pages[0]);
+  first.id = "duplicate";
+  first.formGroup = "copy";
+  payload.document.pages.push(first);
+  payload.document.formValues["copy:shared"] = "Kopie";
+  const { data } = await assemble(payload);
+  const output = await lib.PDFDocument.load(data),
+    form = output.getForm();
+  assert.equal(output.getPageCount(), 2);
+  assert.equal(
+    form.getTextField("group.shared").acroField.getWidgets().length,
+    1,
+  );
+  assert.equal(form.getTextField("copy.shared").getText(), "Kopie");
+  assert.equal(form.getTextField("group.shared").getText(), "Prüfung äöü ß Ω");
+});
+test("Speichern behält die Feldnamen der Ursprungsgruppe", async () => {
+  const payload = await makePayload();
+  const copy = structuredClone(payload.document.pages[0]);
+  copy.id = "duplicate";
+  copy.formGroup = "copy";
+  payload.document.pages.push(copy);
+  payload.options.plainGroup = "group";
+  const { data } = await assemble(payload);
+  const form = (await lib.PDFDocument.load(data)).getForm();
+  assert.equal(form.getTextField("shared").getText(), "Prüfung äöü ß Ω");
+  assert.equal(form.getCheckBox("check").isChecked(), true);
+  assert.ok(form.getTextField("copy.shared"));
+  assert.ok(!form.getFields().some((field) => field.getName().startsWith("group.")));
+});
+test("AES-256 R6 schützt echte Inhalte und erhält Formularwerte", async () => {
+  const payload = await makePayload();
+  payload.options.password = "test-open-password";
+  const { data } = await assemble(payload);
+  const text = Buffer.from(data).toString("latin1");
+  assert.match(text, /\/R\s+6\b/);
+  assert.match(text, /\/CFM\s*\/AESV3/);
+  assert.ok(!text.includes("Prüfung"));
+  await assert.rejects(lib.PDFDocument.load(data));
+  await assert.rejects(lib.PDFDocument.load(data, { password: "wrong" }));
+  const output = await lib.PDFDocument.load(data, {
+    password: "test-open-password",
+  });
+  assert.equal(
+    output.getForm().getTextField("group.shared").getText(),
+    "Prüfung äöü ß Ω",
+  );
+  assert.equal(output.getForm().getCheckBox("group.check").isChecked(), true);
+});
+test("Festes Einbetten und Drucklayout erhalten sichtbare Inhalte ohne Widgets", async () => {
+  const payload = await makePayload();
+  payload.options.flatten = true;
+  let result = await assemble(payload),
+    output = await lib.PDFDocument.load(result.data);
+  assert.equal(output.getForm().getFields().length, 0);
+  assert.ok(output.getPage(0).node.Contents());
+  payload.options.layout = { perSheet: 2, students: 1, autoOrientation: true };
+  result = await assemble(payload);
+  output = await lib.PDFDocument.load(result.data);
+  assert.equal(output.getPageCount(), 1);
+  assert.equal(result.copies, 1);
+  const unresolved = [];
+  const visit = (dict, path) => {
+    const xObjects = dict
+      .lookup(lib.PDFName.of("Resources"))
+      ?.lookup(lib.PDFName.of("XObject"));
+    for (const [name, ref] of xObjects?.entries() || []) {
+      const stream = output.context.lookup(ref);
+      if (!stream?.dict) unresolved.push(`${path}${name}`);
+      else visit(stream.dict, `${path}${name}`);
+    }
+  };
+  visit(output.getPage(0).node, "");
+  assert.deepEqual(unresolved, []);
+});
+test("Drucklayout verarbeitet leere Seiten ohne Inhaltsstrom", async () => {
+  const blank = await lib.PDFDocument.create();
+  blank.addPage([595.3, 841.9]);
+  const filled = blank.addPage([595.3, 841.9]);
+  filled.drawText("Inhalt", { x: 50, y: 700 });
+  blank.addPage([595.3, 841.9]);
+  const data = new Uint8Array(await blank.save()),
+    info = await inspect(data);
+  const result = await assemble({
+    fontBytes,
+    sources: [{ id: "source", data }],
+    document: {
+      formValues: {},
+      pages: info.pages.map((page, i) =>
+        createPage("source", i, page, "group"),
+      ),
+    },
+    options: { layout: { perSheet: 2, students: 1, autoOrientation: true } },
+  });
+  const output = await lib.PDFDocument.load(result.data);
+  assert.equal(output.getPageCount(), 2);
+});
+test("Eigene Texte, Markierungen, Bilder und mehrteilige Zeichnungen werden exportiert", async () => {
+  const png = new Uint8Array(
+    await readFile(new URL("../assets/icon-192.png", import.meta.url)),
+  );
+  const payload = {
+    fontBytes,
+    sources: [],
+    images: [{ id: "image", mime: "image/png", bytes: png }],
+    document: {
+      formValues: {},
+      pages: [
+        {
+          id: "blank",
+          width: 595.3,
+          height: 841.9,
+          rotation: 0,
+          baseRotation: 0,
+          elements: [
+            {
+              type: "text",
+              x: 30,
+              y: 800,
+              width: 200,
+              height: 60,
+              angle: 0,
+              text: "Text Ω",
+              fontSize: 16,
+              color: "#334455",
+            },
+            {
+              type: "highlight",
+              x: 30,
+              y: 700,
+              width: 180,
+              height: 30,
+              angle: 0,
+              color: "#ffff00",
+              opacity: 0.35,
+            },
+            {
+              type: "highlight",
+              x: 30,
+              y: 650,
+              width: 200,
+              height: 40,
+              angle: 0,
+              color: "#f1ce54",
+              opacity: 0.35,
+              rects: [
+                [0, 0, 1, 0.5],
+                [0, 0.5, 0.4, 0.5],
+              ],
+            },
+            {
+              type: "image",
+              assetId: "image",
+              x: 200,
+              y: 500,
+              width: 60,
+              height: 60,
+              angle: 0,
+            },
+            {
+              type: "draw",
+              x: 100,
+              y: 400,
+              width: 120,
+              height: 60,
+              angle: 0,
+              color: "#334455",
+              paths: [
+                [
+                  [0, 0],
+                  [1, 1],
+                ],
+                [
+                  [1, 0],
+                  [0, 1],
+                ],
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    options: {},
+  };
+  const { data } = await assemble(payload);
+  const output = await lib.PDFDocument.load(data);
+  assert.equal(output.getPageCount(), 1);
+  assert.ok(
+    output.getPage(0).node.Resources().lookup(lib.PDFName.of("XObject")).keys()
+      .length,
+  );
+});
+test("Eigene Elemente werden als Anmerkungen gespeichert und beim Öffnen wiederhergestellt", async () => {
+  const elements = [
+    {
+      id: "text",
+      type: "text",
+      x: 30,
+      y: 380,
+      width: 150,
+      height: 40,
+      angle: 0,
+      text: "Notiz Ω",
+      fontSize: 14,
+      color: "#334455",
+      opacity: 1,
+      bold: true,
+    },
+    {
+      id: "highlight",
+      type: "highlight",
+      x: 30,
+      y: 300,
+      width: 100,
+      height: 20,
+      angle: 0,
+      color: "#f1ce54",
+      opacity: 0.35,
+      rects: [[0, 0, 1, 1]],
+    },
+    {
+      id: "draw",
+      type: "draw",
+      x: 50,
+      y: 200,
+      width: 80,
+      height: 40,
+      angle: 90,
+      color: "#354a63",
+      opacity: 1,
+      strokeWidth: 3,
+      points: [
+        [0, 0],
+        [0.5, 1],
+        [1, 0],
+      ],
+    },
+  ];
+  const source = await lib.PDFDocument.create();
+  source.addPage([300, 400]);
+  const sourceData = new Uint8Array(await source.save());
+  const payload = {
+    fontBytes,
+    sources: [{ id: "source", data: sourceData }],
+    document: {
+      formValues: {},
+      pages: [
+        {
+          ...createPage("source", 0, (await inspect(sourceData)).pages[0], "g"),
+          elements,
+        },
+      ],
+    },
+    options: {},
+  };
+  const { data } = await assemble(payload);
+  const saved = await lib.PDFDocument.load(data);
+  const annotations = saved
+    .getPage(0)
+    .node.Annots()
+    .asArray()
+    .map((ref) => saved.context.lookup(ref));
+  assert.deepEqual(
+    annotations.map((annotation) =>
+      annotation.get(lib.PDFName.of("Subtype")).asString(),
+    ),
+    ["/FreeText", "/Highlight", "/Ink"],
+  );
+  assert.ok(
+    annotations.every((annotation) => annotation.get(lib.PDFName.of("AP"))),
+  );
+  const info = await inspect(data.slice());
+  assert.deepEqual(
+    info.pages[0].elements,
+    elements.map(({ id, ...element }) => element),
+  );
+  const cleaned = await lib.PDFDocument.load(info.data);
+  assert.equal(cleaned.getPage(0).node.Annots()?.size() ?? 0, 0);
+  const restored = createPage("source", 0, info.pages[0], "g").elements;
+  assert.equal(restored.length, 3);
+  assert.ok(restored.every((element) => element.id && element.id !== "text"));
+  payload.options.flatten = true;
+  const flat = await lib.PDFDocument.load((await assemble(payload)).data);
+  assert.equal(flat.getPage(0).node.Annots()?.size() ?? 0, 0);
+});
+test("Passwortgeschützte Dateien behalten wiederhergestellte Elemente verschlüsselt", async () => {
+  const source = await lib.PDFDocument.create();
+  source.addPage([300, 400]);
+  const sourceData = new Uint8Array(await source.save());
+  const element = {
+    type: "draw",
+    x: 20,
+    y: 100,
+    width: 50,
+    height: 50,
+    angle: 0,
+    color: "#354a63",
+    opacity: 1,
+    strokeWidth: 2,
+    points: [
+      [0, 0],
+      [1, 1],
+    ],
+  };
+  const { data } = await assemble({
+    fontBytes,
+    sources: [{ id: "source", data: sourceData }],
+    document: {
+      formValues: {},
+      pages: [
+        {
+          ...createPage("source", 0, (await inspect(sourceData)).pages[0], "g"),
+          elements: [{ ...element, id: "draw" }],
+        },
+      ],
+    },
+    options: { password: "geheim" },
+  });
+  const info = await inspect(data, "geheim");
+  assert.deepEqual(info.pages[0].elements, [element]);
+  await assert.rejects(lib.PDFDocument.load(info.data));
+  const cleaned = await lib.PDFDocument.load(info.data, { password: "geheim" });
+  assert.equal(cleaned.getPage(0).node.Annots()?.size() ?? 0, 0);
+});
+test("Kommentare werden als PDF-Notizen gespeichert und wieder eingelesen", async () => {
+  const comments = [
+    {
+      id: "offen",
+      type: "comment",
+      x: 40,
+      y: 360,
+      width: 20,
+      height: 20,
+      angle: 0,
+      color: "#f5c542",
+      opacity: 1,
+      text: "Bitte prüfen Ω",
+      done: false,
+      date: "2026-10-17T08:30:00.000Z",
+    },
+    {
+      id: "erledigt",
+      type: "comment",
+      x: 120,
+      y: 200,
+      width: 20,
+      height: 20,
+      angle: 0,
+      color: "#6fd0f2",
+      opacity: 1,
+      text: "Erledigt",
+      done: true,
+      date: "2026-10-16T12:00:00.000Z",
+    },
+  ];
+  const source = await lib.PDFDocument.create();
+  source.addPage([300, 400]);
+  const sourceData = new Uint8Array(await source.save());
+  const payload = {
+    fontBytes,
+    sources: [{ id: "source", data: sourceData }],
+    document: {
+      formValues: {},
+      pages: [
+        {
+          ...createPage("source", 0, (await inspect(sourceData)).pages[0], "g"),
+          elements: comments,
+        },
+      ],
+    },
+    options: {},
+  };
+  const { data } = await assemble(payload);
+  const saved = await lib.PDFDocument.load(data);
+  const name = (value) => lib.PDFName.of(value);
+  const annotations = saved
+    .getPage(0)
+    .node.Annots()
+    .asArray()
+    .map((ref) => ({ ref, dict: saved.context.lookup(ref) }));
+  assert.deepEqual(
+    annotations.map(({ dict }) => dict.get(name("Subtype")).asString()),
+    ["/Text", "/Text", "/Text"],
+  );
+  const [open, done, state] = annotations.map(({ dict }) => dict);
+  assert.equal(open.get(name("Contents")).decodeText(), "Bitte prüfen Ω");
+  assert.equal(open.get(name("Name")).asString(), "/Comment");
+  assert.equal(open.get(name("F")).asNumber() & 4, 0);
+  assert.equal(open.get(name("M")).decodeText(), "D:20261017083000Z");
+  assert.equal(open.get(name("AP")), undefined);
+  assert.equal(state.get(name("IRT")), annotations[1].ref);
+  assert.equal(state.get(name("StateModel")).asString(), "/Review");
+  assert.equal(state.get(name("State")).asString(), "/Completed");
+  assert.equal(done.get(name("Contents")).decodeText(), "Erledigt");
+  const info = await inspect(data.slice());
+  assert.deepEqual(
+    info.pages[0].elements,
+    comments.map(({ id, ...comment }) => comment),
+  );
+  const cleaned = await lib.PDFDocument.load(info.data);
+  assert.equal(cleaned.getPage(0).node.Annots()?.size() ?? 0, 0);
+  payload.options.flatten = true;
+  const flat = await lib.PDFDocument.load((await assemble(payload)).data);
+  assert.equal(flat.getPage(0).node.Annots()?.size() ?? 0, 0);
+  assert.equal(
+    new TextDecoder()
+      .decode(flat.getPage(0).getContentStream?.()?.contents ?? new Uint8Array())
+      .includes("Bitte"),
+    false,
+  );
+});
+test("Fremde PDF-Notizen mit Antworten, Status und Popup werden übernommen", async () => {
+  const doc = await lib.PDFDocument.create();
+  const page = doc.addPage([300, 400]);
+  const { context } = doc;
+  const note = context.register(
+    context.obj({
+      Type: "Annot",
+      Subtype: "Text",
+      Rect: [50, 300, 70, 320],
+      Contents: lib.PDFHexString.fromText("Fremder Kommentar"),
+      T: lib.PDFHexString.fromText("Prüferin"),
+      M: lib.PDFString.of("D:20260102030405+01'00'"),
+      C: [0, 0, 1],
+      Name: "Comment",
+    }),
+  );
+  const popup = context.register(
+    context.obj({
+      Type: "Annot",
+      Subtype: "Popup",
+      Rect: [80, 250, 200, 320],
+      Parent: note,
+    }),
+  );
+  context.lookup(note).set(lib.PDFName.of("Popup"), popup);
+  const reply = context.register(
+    context.obj({
+      Type: "Annot",
+      Subtype: "Text",
+      Rect: [50, 300, 70, 320],
+      IRT: note,
+      Contents: lib.PDFHexString.fromText("Antwort"),
+      T: lib.PDFHexString.fromText("Autor"),
+    }),
+  );
+  const state = context.register(
+    context.obj({
+      Type: "Annot",
+      Subtype: "Text",
+      Rect: [50, 300, 70, 320],
+      IRT: note,
+      StateModel: "Review",
+      State: "Completed",
+    }),
+  );
+  const square = context.register(
+    context.obj({ Type: "Annot", Subtype: "Square", Rect: [10, 10, 40, 40] }),
+  );
+  for (const ref of [note, popup, reply, state, square]) page.node.addAnnot(ref);
+  const info = await inspect(new Uint8Array(await doc.save()));
+  assert.deepEqual(info.pages[0].elements, [
+    {
+      type: "comment",
+      x: 50,
+      y: 320,
+      width: 20,
+      height: 20,
+      angle: 0,
+      color: "#0000ff",
+      opacity: 1,
+      text: "Fremder Kommentar\n\nAutor: Antwort",
+      done: true,
+      date: "2026-01-02T02:04:05.000Z",
+      author: "Prüferin",
+    },
+  ]);
+  const cleaned = await lib.PDFDocument.load(info.data);
+  const remaining = cleaned
+    .getPage(0)
+    .node.Annots()
+    .asArray()
+    .map((ref) => cleaned.context.lookup(ref).get(lib.PDFName.of("Subtype")).asString());
+  assert.deepEqual(remaining, ["/Square"]);
+});

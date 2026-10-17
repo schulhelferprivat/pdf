@@ -1,0 +1,1117 @@
+<!doctype html>
+<html lang="de" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#1a1d23" />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="PDFs bearbeiten, Bilder öffnen und EPUBs lesen. Lokal und offline."
+    />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' blob:; img-src 'self' blob: data:; font-src 'self' blob:; connect-src 'self' blob:; worker-src 'self' blob:; frame-src 'self' blob:; form-action 'none'"
+    />
+    <title>PDFHelper</title>
+    <link rel="icon" href="./assets/icon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="./assets/icon-maskable-192.png" />
+    <link rel="stylesheet" href="./src/ui/app.css" />
+    <script type="module" src="./src/app.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <nav
+        class="editor-topbar"
+        id="editor-topbar"
+        aria-label="PDF-Werkzeuge"
+      >
+        <button
+          data-action="toggle-pages"
+          class="icon-button"
+          data-icon="sidebar"
+          aria-controls="pages-panel"
+          aria-label="Seitenübersicht ein-/ausblenden"
+          title="Seitenübersicht ein-/ausblenden"
+        ></button>
+        <div class="open-group" id="open-group">
+          <button
+            data-action="open"
+            data-icon="folder-open"
+            class="icon-button open-file"
+            aria-label="Datei öffnen"
+            title="Datei öffnen (Strg/⌘ O)"
+          ></button
+          ><button
+            id="recent-button"
+            data-action="toggle-recent"
+            data-icon="down"
+            class="icon-button recent-toggle"
+            aria-label="Zuletzt geöffnete Dateien"
+            title="Zuletzt geöffnete Dateien"
+            aria-haspopup="menu"
+            aria-expanded="false"
+            aria-controls="recent-menu"
+            hidden
+          ></button>
+          <div
+            id="recent-menu"
+            class="recent-menu"
+            role="menu"
+            aria-label="Zuletzt geöffnete Dateien"
+            hidden
+          ></div>
+        </div>
+        <button
+          data-action="print"
+          data-icon="print"
+          class="icon-button document-action"
+          aria-label="Drucken"
+          title="Drucken"
+        ></button>
+        <button
+          data-action="open-layout"
+          data-icon="layout"
+          class="icon-button document-action"
+          aria-label="Drucklayout erstellen"
+          title="Drucklayout erstellen"
+        ></button>
+        <button
+          data-action="export"
+          data-icon="download"
+          class="icon-button document-action"
+          aria-label="Exportieren"
+          title="Exportieren (Strg/⌘ Umschalt S)"
+        ></button>
+        <button
+          id="search-button"
+          data-action="toggle-search"
+          class="icon-button document-action"
+          data-icon="search"
+          aria-label="Suchen"
+          title="Suchen (Strg/⌘ F)"
+          aria-controls="search-bar"
+          aria-expanded="false"
+        ></button>
+        <div class="editor-controls">
+          <span class="toolbar-divider" aria-hidden="true"></span>
+          <div
+            class="tool-buttons"
+            role="group"
+            aria-label="Bearbeitungswerkzeug"
+          >
+            <button
+              data-tool="select"
+              data-icon="cursor"
+              class="icon-button document-action active"
+              aria-label="Auswahl"
+              title="Auswahl"
+              aria-pressed="true"
+            ></button>
+            <span class="tool-split"
+              ><button
+                data-tool="text"
+                data-icon="text"
+                class="icon-button document-action"
+                aria-label="Text"
+                title="Text"
+                aria-pressed="false"
+              ></button
+              ><button
+                data-action="toggle-tool-style"
+                data-style-tool="text"
+                data-icon="down"
+                class="icon-button document-action tool-style-toggle"
+                aria-label="Text-Optionen"
+                title="Text-Optionen"
+                aria-haspopup="dialog"
+                aria-expanded="false"
+                aria-controls="tool-style-menu"
+              ></button
+            ></span>
+            <span class="tool-split"
+              ><button
+                data-tool="highlight"
+                data-icon="highlighter"
+                class="icon-button document-action"
+                aria-label="Textmarker"
+                title="Textmarker"
+                aria-pressed="false"
+              ></button
+              ><button
+                data-action="toggle-tool-style"
+                data-style-tool="highlight"
+                data-icon="down"
+                class="icon-button document-action tool-style-toggle"
+                aria-label="Textmarker-Optionen"
+                title="Textmarker-Optionen"
+                aria-haspopup="dialog"
+                aria-expanded="false"
+                aria-controls="tool-style-menu"
+              ></button
+            ></span>
+            <span class="tool-split"
+              ><button
+                data-tool="draw"
+                data-icon="pen"
+                class="icon-button document-action"
+                aria-label="Zeichnen"
+                title="Zeichnen"
+                aria-pressed="false"
+              ></button
+              ><button
+                data-action="toggle-tool-style"
+                data-style-tool="draw"
+                data-icon="down"
+                class="icon-button document-action tool-style-toggle"
+                aria-label="Stift-Optionen"
+                title="Stift-Optionen"
+                aria-haspopup="dialog"
+                aria-expanded="false"
+                aria-controls="tool-style-menu"
+              ></button
+            ></span>
+            <button
+              data-tool="erase"
+              data-icon="eraser"
+              class="icon-button document-action"
+              aria-label="Radierer"
+              title="Radierer"
+              aria-pressed="false"
+            ></button>
+            <span class="tool-split"
+              ><button
+                data-tool="comment"
+                data-icon="message"
+                class="icon-button document-action comments-toggle"
+                aria-label="Kommentar"
+                title="Kommentar setzen"
+                aria-pressed="false"
+                aria-controls="comments-panel"
+              >
+                <span class="comments-badge" id="comments-badge" hidden></span></button
+              ><button
+                data-action="toggle-tool-style"
+                data-style-tool="comment"
+                data-icon="down"
+                class="icon-button document-action tool-style-toggle"
+                aria-label="Kommentar-Optionen"
+                title="Kommentar-Optionen"
+                aria-haspopup="dialog"
+                aria-expanded="false"
+                aria-controls="tool-style-menu"
+              ></button
+            ></span>
+          </div>
+          <span class="toolbar-divider" aria-hidden="true"></span>
+          <button
+            data-action="rotate-page"
+            class="icon-button document-action"
+            data-icon="rotate-right"
+            aria-label="Seite drehen"
+            title="Seite drehen (90° nach rechts)"
+            disabled
+          ></button>
+          <span class="toolbar-divider" aria-hidden="true"></span>
+          <div
+            class="history-group"
+            role="group"
+            aria-label="Verlauf"
+          >
+            <button
+              id="undo-button"
+              data-action="undo"
+              class="icon-button"
+              data-icon="undo"
+              aria-label="Rückgängig"
+              title="Rückgängig (Strg/⌘ Z)"
+              disabled
+            ></button>
+            <button
+              id="redo-button"
+              data-action="redo"
+              class="icon-button"
+              data-icon="redo"
+              aria-label="Wiederholen"
+              title="Wiederholen (Strg/⌘ Umschalt Z)"
+              disabled
+            ></button>
+            <button
+              id="history-button"
+              data-action="toggle-history"
+              data-icon="down"
+              class="icon-button history-toggle"
+              aria-label="Verlauf"
+              title="Verlauf"
+              aria-haspopup="menu"
+              aria-expanded="false"
+              aria-controls="history-menu"
+              disabled
+            ></button>
+          </div>
+          <div class="document-title-slot">
+            <button
+              id="document-title"
+              class="document-title"
+              type="button"
+              aria-label="Dokumentname – Rechtsklick für Umbenennen"
+              hidden
+            >
+              <span class="document-title-name"></span>
+            </button>
+          </div>
+        </div>
+        <button
+          id="save-button"
+          data-action="save"
+          data-icon="save"
+          class="icon-button document-action save-button"
+          aria-label="Speichern"
+          title="Speichern (Strg/⌘ S)"
+        ></button>
+      </nav>
+      <div class="workspace pages-hidden" id="workspace">
+        <aside
+          class="pages-panel"
+          id="pages-panel"
+          aria-label="Seitenübersicht"
+        >
+          <details class="side-section" data-side-section="files" hidden>
+            <summary>
+              <span class="side-section-title">Dateien</span
+              ><span class="side-section-count" id="file-count"></span
+              ><span class="side-section-chevron" data-icon="down"></span>
+            </summary>
+            <ul id="file-list" class="file-list"></ul>
+            <button
+              data-action="merge"
+              data-icon="layers"
+              class="full-width file-merge"
+            >
+              PDFs zusammenführen
+            </button>
+          </details>
+          <details class="side-section" data-side-section="outline" hidden>
+            <summary>
+              <span class="side-section-title">Inhalt</span
+              ><span class="side-section-chevron" data-icon="down"></span>
+            </summary>
+            <nav
+              id="outline-list"
+              class="outline-list"
+              aria-label="Inhaltsverzeichnis"
+            ></nav>
+          </details>
+          <div class="page-bulk">
+            <button data-action="select-all">Alle</button
+            ><button data-action="select-none">Keine</button
+            ><button data-action="split" data-icon="split" hidden>
+              Aufteilen
+            </button>
+          </div>
+          <div id="page-list" class="page-list"></div>
+          <details
+            class="side-section side-section-bottom"
+            data-side-section="annotations"
+            hidden
+          >
+            <summary>
+              <span class="side-section-title">Annotationen</span
+              ><span class="side-section-count" id="annotation-count"></span
+              ><span class="side-section-chevron" data-icon="down"></span>
+            </summary>
+            <div
+              class="annotation-filter"
+              role="group"
+              aria-label="Annotationen filtern"
+            >
+              <button
+                type="button"
+                data-annotation-filter="all"
+                aria-pressed="true"
+              >
+                Alle</button
+              ><button type="button" data-annotation-filter="text">Text</button
+              ><button type="button" data-annotation-filter="mark">
+                Markierung</button
+              ><button type="button" data-annotation-filter="draw">
+                Zeichnung</button
+              ><button type="button" data-annotation-filter="image">
+                Bild</button
+              ><button type="button" data-annotation-filter="comment">
+                Kommentar</button
+              ><button type="button" data-annotation-filter="link">
+                Link
+              </button>
+              <button
+                type="button"
+                id="annotation-search-toggle"
+                data-icon="search"
+                aria-label="Annotationen durchsuchen"
+                title="Annotationen durchsuchen"
+                aria-expanded="false"
+                aria-controls="annotation-search"
+              ></button>
+            </div>
+            <input
+              type="search"
+              id="annotation-search"
+              class="annotation-search"
+              placeholder="Text suchen"
+              aria-label="Annotationen durchsuchen"
+              hidden
+            />
+            <div id="annotation-bulk" class="annotation-bulk" hidden>
+              <span id="annotation-selection-count" role="status"></span>
+              <button
+                type="button"
+                id="annotation-delete-selection"
+                class="icon-button"
+                data-icon="trash"
+                aria-label="Auswahl löschen"
+                title="Auswahl löschen (Entf)"
+              ></button>
+            </div>
+            <ul
+              id="annotation-list"
+              class="annotation-list"
+              aria-label="Annotationen"
+            ></ul>
+          </details>
+        </aside>
+        <main class="editor" id="editor" aria-label="PDF-Bearbeitungsfläche">
+          <div
+            class="search-bar"
+            id="search-bar"
+            role="search"
+            aria-label="Im Dokument suchen"
+            hidden
+          >
+            <input
+              type="search"
+              id="search-input"
+              aria-label="Suchbegriff"
+              placeholder="Im Dokument suchen"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <output class="search-count" id="search-count" aria-live="polite"></output>
+            <button
+              data-action="search-previous"
+              class="icon-button"
+              data-icon="up"
+              aria-label="Vorheriger Treffer"
+              title="Vorheriger Treffer (Umschalt Enter)"
+            ></button>
+            <button
+              data-action="search-next"
+              class="icon-button"
+              data-icon="down"
+              aria-label="Nächster Treffer"
+              title="Nächster Treffer (Enter)"
+            ></button>
+            <button
+              data-action="search-close"
+              class="icon-button"
+              data-icon="close"
+              aria-label="Suche schließen"
+              title="Suche schließen (Esc)"
+            ></button>
+          </div>
+          <section class="welcome" id="welcome" aria-label="PDFHelper starten">
+            <div class="welcome-actions">
+              <button
+                data-action="open"
+                class="open-button"
+                data-icon="plus"
+                title="Dateien öffnen (Strg/⌘ O)"
+              >
+                Dateien öffnen
+              </button>
+              <button
+                data-action="install"
+                data-icon="install"
+                id="install-button"
+                title="App installieren"
+                hidden
+              >
+                App installieren
+              </button>
+            </div>
+            <section
+              class="welcome-recent"
+              id="welcome-recent"
+              aria-labelledby="welcome-recent-title"
+              hidden
+            >
+              <h2 id="welcome-recent-title">Zuletzt geöffnet</h2>
+              <div class="welcome-recent-list" id="welcome-recent-list"></div>
+            </section>
+          </section>
+          <section id="epub-reader" class="epub-reader" aria-label="EPUB lesen" hidden>
+            <nav class="epub-toolbar" aria-label="EPUB-Navigation">
+              <button type="button" id="epub-previous" aria-label="Vorheriges Kapitel">←</button>
+              <output id="epub-chapter" aria-live="polite"></output>
+              <button type="button" id="epub-next" aria-label="Nächstes Kapitel">→</button>
+              <label>Schriftgröße
+                <select id="epub-font">
+                  <option value="80">80 %</option>
+                  <option value="100" selected>100 %</option>
+                  <option value="120">120 %</option>
+                  <option value="150">150 %</option>
+                  <option value="180">180 %</option>
+                  <option value="200">200 %</option>
+                </select>
+              </label>
+            </nav>
+            <div id="epub-books" class="epub-books"></div>
+          </section>
+          <div class="page-scroll" id="page-scroll" hidden>
+            <div class="page-flow" id="page-flow"></div>
+            <div id="page-stage" class="page-stage">
+              <canvas id="page-canvas"></canvas>
+              <div id="text-layer" class="textLayer"></div>
+              <div id="link-layer" class="link-layer"></div>
+              <div id="form-layer" class="form-layer"></div>
+              <div id="element-layer" class="element-layer"></div>
+              <div id="interaction-layer" class="interaction-layer"></div>
+              <p class="page-loading" id="page-loading" hidden>
+                Seite wird geladen …
+              </p>
+            </div>
+          </div>
+          <div class="view-pill" id="view-pill" hidden>
+            <nav
+              class="page-navigation"
+              id="page-navigation"
+              aria-label="Seitennavigation"
+            >
+              <button
+                id="navigation-back"
+                data-action="navigation-back"
+                class="icon-button"
+                data-icon="back"
+                aria-label="Zur vorherigen Leseposition"
+                title="Zur vorherigen Leseposition"
+                disabled
+              ></button>
+              <button
+                data-action="previous"
+                class="icon-button"
+                data-icon="left"
+                aria-label="Vorherige Seite"
+              ></button
+              ><label class="page-number"
+                ><input
+                  id="current-page"
+                  type="number"
+                  min="1"
+                  value="1"
+                  aria-label="Aktuelle Seite"
+                /><span class="page-separator" aria-hidden="true">/</span
+                ><span id="total-pages">0</span></label
+              ><button
+                data-action="next"
+                class="icon-button"
+                data-icon="right"
+                aria-label="Nächste Seite"
+              ></button>
+            </nav>
+            <span class="toolbar-divider" aria-hidden="true"></span>
+            <div
+              class="zoom-controls"
+              id="zoom-controls"
+              role="toolbar"
+              aria-label="Ansicht"
+            >
+              <button
+                data-action="zoom-out"
+                class="icon-button"
+                data-icon="minus"
+                aria-label="Verkleinern"
+                title="Verkleinern (Strg/⌘ + Mausrad)"
+              ></button>
+              <button
+                data-action="zoom-in"
+                class="icon-button"
+                data-icon="plus"
+                aria-label="Vergrößern"
+                title="Vergrößern (Strg/⌘ + Mausrad)"
+              ></button>
+              <button
+                data-action="fit-width"
+                data-zoom="fit-width"
+                class="icon-button"
+                data-icon="fit-width"
+                aria-label="An Seitenbreite anpassen"
+                title="An Seitenbreite anpassen"
+                aria-pressed="true"
+              ></button>
+              <button
+                data-action="fit-page"
+                data-zoom="fit-page"
+                class="icon-button"
+                data-icon="fit-page"
+                aria-label="Ganze Seite anzeigen"
+                title="Ganze Seite anzeigen"
+                aria-pressed="false"
+              ></button>
+              <span class="toolbar-divider" aria-hidden="true"></span>
+              <button
+                id="page-view-button"
+                data-action="toggle-page-view"
+                class="icon-button"
+                data-icon="two-pages"
+                aria-label="Seitenansicht: zwei Seiten nebeneinander"
+                title="Seitenansicht: zwei Seiten nebeneinander"
+                aria-pressed="false"
+              ></button>
+              <button
+                id="fullscreen-button"
+                data-action="toggle-fullscreen"
+                class="icon-button"
+                data-icon="maximize"
+                aria-label="Vollbildmodus starten"
+                title="Vollbildmodus starten"
+                aria-pressed="false"
+              ></button>
+            </div>
+          </div>
+          <div class="drop-overlay" id="drop-overlay" hidden>
+            <span data-icon="folder"></span><strong>Dateien hier ablegen</strong
+            ><span>PDF, JPG, PNG, WebP, TIFF, SVG oder EPUB · ausschließlich lokale Verarbeitung</span>
+          </div>
+        </main>
+        <aside
+          class="comments-panel"
+          id="comments-panel"
+          aria-label="Kommentare"
+          hidden
+        >
+          <div class="comments-heading">
+            <h2>Kommentare</h2>
+            <span class="side-section-count" id="comments-count"></span>
+            <button
+              data-action="toggle-comments"
+              class="icon-button"
+              data-icon="close"
+              aria-label="Kommentare schließen"
+              title="Kommentare schließen"
+            ></button>
+          </div>
+          <div class="comments-filter">
+            <label for="comments-hide-done">Erledigte ausblenden</label>
+            <input
+              type="checkbox"
+              role="switch"
+              id="comments-hide-done"
+              class="switch"
+            />
+          </div>
+          <ul id="comment-list" class="comment-list"></ul>
+          <p id="comments-empty" class="comments-empty" hidden>
+            Noch keine Kommentare. Mit dem Kommentar-Werkzeug auf die Seite
+            klicken.
+          </p>
+        </aside>
+      </div>
+    </div>
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+    <div
+      id="context-menu"
+      class="context-menu"
+      role="menu"
+      aria-label="Kontextmenü"
+      popover="manual"
+    ></div>
+    <div
+      id="history-menu"
+      class="history-menu"
+      role="menu"
+      aria-label="Verlauf"
+      popover="manual"
+    ></div>
+    <div
+      id="tool-style-menu"
+      class="tool-style-menu"
+      role="dialog"
+      aria-label="Werkzeugoptionen"
+      popover="manual"
+    >
+      <fieldset class="tool-style-colors">
+        <legend>Farben</legend>
+        <div id="tool-style-swatches" class="tool-style-swatches"></div>
+      </fieldset>
+      <svg
+        class="tool-style-preview"
+        viewBox="0 0 220 64"
+        aria-hidden="true"
+      >
+        <path
+          id="tool-style-preview"
+          d="M26 42 C 60 10, 90 10, 110 32 S 160 56, 194 22"
+          fill="none"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </svg>
+      <label class="tool-style-width" for="tool-style-width">
+        <span>Stärke</span>
+        <input type="range" id="tool-style-width" step="1" />
+        <span class="tool-style-scale" aria-hidden="true"
+          ><span>Schmal</span><span>Breit</span></span
+        >
+      </label>
+      <div class="tool-style-font" id="tool-style-font-row">
+        <span id="tool-style-font-label">Schriftgröße</span>
+        <div
+          class="tool-style-stepper"
+          role="group"
+          aria-labelledby="tool-style-font-label"
+        >
+          <button
+            type="button"
+            id="tool-style-font-down"
+            class="icon-button"
+            data-icon="minus"
+            aria-label="Schrift verkleinern"
+            title="Schrift verkleinern"
+          ></button
+          ><output id="tool-style-font-size" aria-live="polite">16 pt</output
+          ><button
+            type="button"
+            id="tool-style-font-up"
+            class="icon-button"
+            data-icon="plus"
+            aria-label="Schrift vergrößern"
+            title="Schrift vergrößern"
+          ></button>
+        </div>
+      </div>
+      <div class="tool-style-switch" id="tool-style-text-only-row">
+        <label for="tool-style-text-only">Nur Text hervorheben</label>
+        <input
+          type="checkbox"
+          role="switch"
+          id="tool-style-text-only"
+          class="switch"
+        />
+      </div>
+      <div class="tool-style-switch" id="tool-style-return-row">
+        <label for="tool-style-return">Nach Erstellen zu Auswahl&#8209;Tool</label>
+        <input
+          type="checkbox"
+          role="switch"
+          id="tool-style-return"
+          class="switch"
+        />
+      </div>
+    </div>
+    <div id="update-banner" class="update-banner" hidden>
+      <span>Eine neue Version ist bereit.</span
+      ><button data-action="update-later">Später</button
+      ><button data-action="update-now" class="button-primary">
+        Aktualisieren
+      </button>
+    </div>
+    <input
+      id="file-input"
+      type="file"
+      accept="application/pdf,image/jpeg,image/png,image/webp,image/tiff,image/svg+xml,application/epub+zip,.pdf,.jpg,.jpeg,.png,.webp,.tif,.tiff,.svg,.epub"
+      multiple
+      hidden
+    />
+    <dialog id="export-dialog" class="dialog">
+      <form id="export-form">
+        <div class="dialog-header">
+          <div>
+            <h2>Dokument exportieren</h2>
+          </div>
+          <button
+            type="button"
+            class="icon-button"
+            data-close
+            data-icon="close"
+            aria-label="Schließen"
+          ></button>
+        </div>
+        <label
+          >Dateiname<input
+            id="export-name"
+            required
+            maxlength="180"
+            value="Dokument"
+        /></label>
+        <div class="field-row">
+          <label
+            >Format<select id="export-format">
+              <option value="pdf">PDF-Dokument</option>
+              <option value="png">PNG-Bilder</option>
+              <option value="jpg">JPG-Bilder</option>
+            </select></label
+          ><label
+            >Seiten<select id="export-scope">
+              <option value="all">Alle Seiten</option>
+              <option value="selected">Ausgewählte Seiten</option>
+            </select></label
+          >
+        </div>
+        <label
+          >Aufteilung<select id="export-split">
+            <option value="combined">Gemeinsame Datei</option>
+            <option value="groups">Einzeln / nach Seitengruppen (ZIP)</option>
+          </select></label
+        >
+        <div id="pdf-options">
+          <label class="checkbox-label"
+            ><input id="export-flatten" type="checkbox" /> Formularwerte und
+            Anmerkungen fest in die Seiten einbetten</label
+          >
+          <fieldset>
+            <legend>Passwortschutz <span class="muted">optional</span></legend>
+            <label
+              >Öffnungspasswort<input
+                id="export-password"
+                type="password"
+                autocomplete="new-password"
+                placeholder="Ohne Passwort unverschlüsselt" /></label
+            ><label
+              >Passwort wiederholen<input
+                id="export-password-confirm"
+                type="password"
+                autocomplete="new-password"
+            /></label>
+            <p class="muted small">
+              Echte AES-256-Verschlüsselung. Das Passwort wird nicht
+              gespeichert.
+            </p>
+          </fieldset>
+        </div>
+        <div id="image-options" hidden>
+          <div class="field-row">
+            <label
+              >Auflösung<select id="export-dpi">
+                <option value="72">72 dpi</option>
+                <option value="150" selected>150 dpi</option>
+                <option value="300">300 dpi</option>
+              </select></label
+            ><label
+              >JPG-Qualität<input
+                id="export-quality"
+                type="number"
+                min="10"
+                max="100"
+                value="90"
+            /></label>
+          </div>
+          <p class="muted small">
+            Mehrere Seiten werden als ZIP gespeichert. Sehr große Bilder werden
+            an das Speicherbudget angepasst.
+          </p>
+        </div>
+        <p id="export-error" class="error-text" role="alert"></p>
+        <div class="dialog-actions">
+          <button type="button" data-close>Abbrechen</button
+          ><button type="submit" class="button-primary" data-icon="download">
+            Exportieren
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="layout-dialog" class="dialog layout-dialog">
+      <form id="layout-form">
+        <div class="dialog-header">
+          <div>
+            <h2>Drucklayout erstellen</h2>
+          </div>
+          <button
+            type="button"
+            class="icon-button"
+            data-close
+            data-icon="close"
+            aria-label="Schließen"
+          ></button>
+        </div>
+        <fieldset class="sheet-fieldset">
+          <legend>Seiten pro Blatt</legend>
+          <div class="sheet-options" id="sheet-options">
+          <button
+            type="button"
+            data-sheet="2" class="active"
+            aria-label="2 Seiten pro Blatt"
+            title="2 Seiten pro Blatt"
+            aria-pressed="true"
+          >
+            <span class="sheet-preview" aria-hidden="true"
+              ><span class="sheet-preview-sheet"><span class="sheet-preview-cell">1</span><span class="sheet-preview-cell">2</span></span></span
+            >
+          </button>
+          <button
+            type="button"
+            data-sheet="3"
+            aria-label="Sondermodus für 3 Seiten"
+            title="Sondermodus für 3 Seiten"
+            aria-pressed="false"
+          >
+            <span class="sheet-preview" aria-hidden="true"
+              ><span class="sheet-preview-sheet"><span class="sheet-preview-cell">1</span><span class="sheet-preview-cell">1</span></span><span class="sheet-preview-sheet"><span class="sheet-preview-cell">2</span><span class="sheet-preview-cell">3</span></span></span
+            >
+          </button>
+          <button
+            type="button"
+            data-sheet="4"
+            aria-label="4 Seiten pro Blatt"
+            title="4 Seiten pro Blatt"
+            aria-pressed="false"
+          >
+            <span class="sheet-preview" aria-hidden="true"
+              ><span class="sheet-preview-sheet"><span class="sheet-preview-cell">1</span><span class="sheet-preview-cell">2</span><span class="sheet-preview-cell">3</span><span class="sheet-preview-cell">4</span></span></span
+            >
+          </button>
+          <button
+            type="button"
+            data-sheet="6"
+            aria-label="6 Seiten pro Blatt"
+            title="6 Seiten pro Blatt"
+            aria-pressed="false"
+          >
+            <span class="sheet-preview" aria-hidden="true"
+              ><span class="sheet-preview-sheet"><span class="sheet-preview-cell">1</span><span class="sheet-preview-cell">2</span><span class="sheet-preview-cell">3</span><span class="sheet-preview-cell">4</span><span class="sheet-preview-cell">5</span><span class="sheet-preview-cell">6</span></span></span
+            >
+          </button>
+          <button
+            type="button"
+            data-sheet="8"
+            aria-label="8 Seiten pro Blatt"
+            title="8 Seiten pro Blatt"
+            aria-pressed="false"
+          >
+            <span class="sheet-preview" aria-hidden="true"
+              ><span class="sheet-preview-sheet"><span class="sheet-preview-cell">1</span><span class="sheet-preview-cell">2</span><span class="sheet-preview-cell">3</span><span class="sheet-preview-cell">4</span><span class="sheet-preview-cell">5</span><span class="sheet-preview-cell">6</span><span class="sheet-preview-cell">7</span><span class="sheet-preview-cell">8</span></span></span
+            >
+          </button>
+          </div>
+        </fieldset>
+        <label class="checkbox-label"
+          ><input id="layout-auto" type="checkbox" checked />
+          Ausrichtung automatisch optimieren</label
+        >
+        <div class="field-row">
+          <label
+            >Anzahl Lernende (optional)<input
+              id="layout-students"
+              type="number"
+              min="1"
+              step="1"
+              placeholder="z. B. 24" /></label
+          ><label
+            >Offene Plätze von Restseiten<select id="layout-padding">
+              <option value="blank">Leer lassen</option>
+              <option value="auto">Mit vorhandenen Seiten auffüllen</option>
+              <option value="lcm">Nach Lernendenanzahl auffüllen</option>
+            </select></label
+          >
+        </div>
+        <p id="layout-summary" class="muted small" aria-live="polite"></p>
+        <div class="dialog-actions">
+          <button type="button" data-close>Abbrechen</button
+          ><button type="button" id="layout-view" data-icon="layout">
+            Drucklayout anzeigen
+          </button
+          ><button
+            type="submit"
+            id="layout-submit"
+            class="button-primary"
+            data-icon="download"
+          >
+            Drucklayout speichern
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="busy-dialog" class="dialog busy-dialog">
+      <div class="busy-spinner"></div>
+      <h2 id="busy-title">PDF wird vorbereitet</h2>
+      <p id="busy-message" class="muted">
+        Die Verarbeitung läuft auf deinem Gerät.
+      </p>
+      <progress id="busy-progress" max="1"></progress
+      ><button id="cancel-job">Abbrechen</button>
+    </dialog>
+    <dialog id="password-dialog" class="dialog">
+      <form id="password-form">
+        <div class="dialog-header">
+          <h2>PDF entsperren</h2>
+          <button
+            type="button"
+            class="icon-button"
+            data-close
+            data-icon="close"
+            aria-label="Schließen"
+          ></button>
+        </div>
+        <p id="password-filename" class="muted"></p>
+        <p id="password-error" class="error-text" role="alert"></p>
+        <label
+          >Öffnungspasswort<input
+            id="input-password"
+            type="password"
+            autocomplete="off"
+        /></label>
+        <p class="muted small">
+          Das Passwort bleibt nur für diese Sitzung im Arbeitsspeicher.
+        </p>
+        <div class="dialog-actions">
+          <button type="button" data-close>Abbrechen</button
+          ><button class="button-primary" type="submit">Öffnen</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="confirm-dialog" class="dialog">
+      <form method="dialog">
+        <h2 id="confirm-title">Änderungen verwerfen?</h2>
+        <p id="confirm-message" class="muted"></p>
+        <div class="dialog-actions">
+          <button value="cancel">Abbrechen</button
+          ><button value="yes" class="button-primary">Fortfahren</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="help-dialog" class="dialog help-dialog">
+      <div class="dialog-header">
+        <div>
+          <h2>PDFHelper verwenden</h2>
+        </div>
+        <button
+          class="icon-button"
+          data-close
+          data-icon="close"
+          aria-label="Schließen"
+        ></button>
+      </div>
+      <div class="help-steps">
+        <section>
+          <span>01</span>
+          <div>
+            <h3>Öffnen & ordnen</h3>
+            <p>
+              Öffne PDFs oder Bilder. Links wählst du Seiten aus, ziehst sie an
+              eine andere Position oder gruppierst sie, indem du eine Seite auf
+              eine andere ziehst. Strg/⌘ und Umschalt erlauben Mehrfachauswahl.
+            </p>
+          </div>
+        </section>
+        <section>
+          <span>02</span>
+          <div>
+            <h3>Direkt ergänzen</h3>
+            <p>
+              Wähle oben Text, Textmarker oder Zeichnen. Klicke oder ziehe
+              auf der Seite. Mit dem Textmarker überstreichst du PDF-Text, um ihn
+              zu markieren; bereits markierter Text wird beim Wechsel zum
+              Textmarker sofort markiert. Außerhalb von Text malst du frei
+              mit dem Textmarker. Über den Pfeil neben Textmarker und Zeichnen
+              wählst du Farbe und Stärke. Eigene Elemente lassen sich verschieben und über
+              den Eckpunkt skalieren. Text schreibst du direkt auf der Seite;
+              ein Doppelklick auf einen Text bearbeitet ihn erneut. Im
+              Auswahlmodus klickst du vorhandene Formularfelder direkt an, um
+              sie auszufüllen.
+            </p>
+          </div>
+        </section>
+        <section>
+          <span>03</span>
+          <div>
+            <h3>Exportieren oder drucken</h3>
+            <p>
+              Exportiere das Dokument, einzelne Seiten oder Gruppen. Für mehrere
+              Seiten auf einem Blatt erstellst du über „Drucklayout erstellen“ in
+              der Werkzeugleiste ein Drucklayout und speicherst es in den
+              Downloads oder zeigst es an. PDFs
+              lassen sich mit einem Öffnungspasswort verschlüsseln. Ein
+              Rechtsklick auf einen Dateinamen benennt die Datei um, kopiert
+              ihren Namen oder schließt das Dokument. Über einen Rechtsklick
+              auf Seiten in der Seitenübersicht kopierst du sie in ein neues
+              oder ein anderes geöffnetes Dokument.
+            </p>
+          </div>
+        </section>
+      </div>
+      <details>
+        <summary>Tastatur</summary>
+        <p>
+          Strg/⌘ O: öffnen · Strg/⌘ S: speichern · Strg/⌘ Umschalt S:
+          exportieren · Strg/⌘ F: suchen
+          (Enter/Umschalt Enter oder F3/Umschalt F3: nächster/vorheriger
+          Treffer) · Strg/⌘ Z: rückgängig ·
+          Strg/⌘ Umschalt Z oder Strg/⌘ Y: wiederholen ·
+          Entf: ausgewähltes Element löschen · Esc: Auswahlwerkzeug · Bild
+          auf/ab: Seite wechseln.
+        </p>
+      </details>
+      <details>
+        <summary>Offline, Datenschutz & Grenzen</summary>
+        <p>
+          Nach dem vollständigen ersten Laden funktionieren alle Werkzeuge ohne
+          Internet. Nur die App selbst wird zwischengespeichert. Dateien und
+          Änderungen bleiben im Arbeitsspeicher und gehen beim Neuladen
+          verloren. Download-Dateien werden nur auf deinen Wunsch erstellt.
+        </p>
+        <p>
+          Grenzen: 100 MiB pro PDF, 150 MiB pro Zusammenführung, 500 Seiten pro
+          Dokument. Standardformulare werden unterstützt. Dynamische
+          XFA-Formulare, PDF-Skripte, OCR und digitale Zertifikatssignaturen
+          werden nicht bearbeitet. Bereits vorhandene digitale Signaturen können
+          durch Änderungen ungültig werden.
+        </p>
+      </details>
+      <details>
+        <summary>Drucklayouts und Kopien</summary>
+        <p>
+          2, 4, 6 oder 8 Seiten pro Blatt. Bei ungerader Seitenzahl im
+          Zweierlayout wird jede Seite doppelt platziert. Bei genau einer
+          lernenden Person werden aufeinanderfolgende Seiten gepaart. Der
+          Dreiseitenmodus verwendet [1,1], [2,3], [2,3]. Die berechnete
+          Kopienzahl erscheint im Dateinamen und in der Layoutvorschau.
+        </p>
+      </details>
+      <details>
+        <summary>macOS: Dateien und Systemdruckdialog</summary>
+        <p>
+          Falls macOS den Zugriff blockiert: Systemeinstellungen → Datenschutz &
+          Sicherheit → Dateien & Ordner → Zugriff für den Browser auf Downloads
+          bzw. Dokumente erlauben. Anschließend den Browser neu starten.
+        </p>
+        <p>
+          Für den Systemdruckdialog den Browser und die App beenden, den
+          passenden Befehl im Terminal ausführen und den Browser neu starten:
+        </p>
+        <label
+          >Microsoft Edge
+          <div class="copy-command">
+            <input
+              readonly
+              value="defaults write com.microsoft.Edge UseSystemPrintDialog -bool true"
+            /><button data-action="copy-command">Kopieren</button>
+          </div></label
+        ><label
+          >Google Chrome
+          <div class="copy-command">
+            <input
+              readonly
+              value="defaults write com.google.Chrome DisablePrintPreview -bool true"
+            /><button data-action="copy-command">Kopieren</button>
+          </div></label
+        >
+        <p>Alternativ die PDF exportieren und im PDF-Betrachter drucken.</p>
+      </details>
+      <div class="dialog-actions">
+        <button data-close class="button-primary">Verstanden</button>
+      </div>
+    </dialog>
+  </body>
+</html>
