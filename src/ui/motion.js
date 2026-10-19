@@ -45,6 +45,31 @@ export function fadeContent(element) {
   animation.addEventListener("cancel", cleanup, { once: true });
 }
 
+export function holdEntrance(element) {
+  cancelContentFade(element);
+  if (reducedMotion.matches || !element.isConnected || element.closest("[hidden]")) return null;
+  const style = getComputedStyle(element);
+  const animation = element.animate(
+    [
+      { opacity: 0, translate: "0 10px" },
+      { opacity: 1, translate: "0 0" },
+    ],
+    {
+      duration: parseFloat(style.getPropertyValue("--motion-enter")),
+      easing: style.getPropertyValue("--motion-ease").trim(),
+      fill: "backwards",
+    },
+  );
+  animation.pause();
+  contentFades.set(element, animation);
+  const cleanup = () => {
+    if (contentFades.get(element) === animation) contentFades.delete(element);
+  };
+  animation.addEventListener("finish", cleanup, { once: true });
+  animation.addEventListener("cancel", cleanup, { once: true });
+  return animation;
+}
+
 reducedMotion.addEventListener("change", () => {
   if (reducedMotion.matches)
     for (const element of contentFades.keys()) cancelContentFade(element);

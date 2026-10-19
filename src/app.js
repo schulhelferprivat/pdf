@@ -51,7 +51,7 @@ import {
 import { layoutPlan } from "./pdf/layout.js";
 import { icon, installIcons, cursorIcon } from "./ui/icons.js";
 import { setupPwa } from "./pwa/app.js";
-import { setHidden, setupDisclosures, fadeContent, cancelContentFade } from "./ui/motion.js";
+import { setHidden, setupDisclosures, fadeContent, cancelContentFade, holdEntrance } from "./ui/motion.js";
 const $ = (id) => document.getElementById(id);
 const sources = new Map(),
   assets = new Map();
@@ -113,23 +113,25 @@ async function confirmAction(title, text, acceptLabel = "Fortfahren") {
     ),
   );
 }
-async function runJob(title, operation) {
+async function runJob(title, operation, { silent = false } = {}) {
   if (busy) throw new Error("Bitte den laufenden Vorgang zuerst abschließen.");
   const controller = new AbortController();
   busy = controller;
-  $("busy-title").textContent = title;
-  $("busy-message").textContent = "Die Verarbeitung läuft auf deinem Gerät.";
-  $("busy-progress").removeAttribute("value");
-  $("busy-dialog").showModal();
+  if (!silent) {
+    $("busy-title").textContent = title;
+    $("busy-message").textContent = "Die Verarbeitung läuft auf deinem Gerät.";
+    $("busy-progress").removeAttribute("value");
+    $("busy-dialog").showModal();
+  }
   const progress = (value) => {
-    if (!controller.signal.aborted) $("busy-progress").value = value;
+    if (!silent && !controller.signal.aborted) $("busy-progress").value = value;
   };
   try {
     return await operation({ signal: controller.signal, progress });
   } finally {
     if (busy === controller) {
       busy = null;
-      $("busy-dialog").close();
+      if (!silent) $("busy-dialog").close();
     }
   }
 }
@@ -162,29 +164,70 @@ function modify(label, operation) {
   edit(doc, label, operation);
   changed();
 }
-let pagesAutoHidden = false;
-function fitPagesPanel() {
-  const workspace = $("workspace"),
-    collapse =
-      !documents.length ||
-      (documents.length === 1 && documents[0].kind === "pdf" && documents[0].pages.length <= 1);
-  if (collapse) {
-    pagesAutoHidden ||= !workspace.classList.contains("pages-hidden");
-    workspace.classList.add("pages-hidden");
-    workspace.classList.remove("pages-open");
-  } else if (pagesAutoHidden) {
-    pagesAutoHidden = false;
-    workspace.classList.remove("pages-hidden");
+let pagesAutoHidden = false,
+  enteringDocument = null,
+  entrance = null;
+const entranceDelay = 400;
+function startEntrance(doc) {
+  dropEntrance();
+  const animation = holdEntrance($("page-flow"));
+  if (animation)
+    entrance = {
+      documentId: doc.id,
+      animation,
+      timer: setTimeout(playEntrance, entranceDelay),
+    };
+}
+function playEntrance() {
+  if (!entrance) return;
+  clearTimeout(entrance.timer);
+  entrance.animation.play();
+  entrance = null;
+}
+function dropEntrance() {
+  if (!entrance) return;
+  clearTimeout(entrance.timer);
+  cancelContentFade($("page-flow"));
+  entrance = null;
+}
+function withoutPanelMotion(change) {
+  const workspace = $("workspace");
+  if (workspace.classList.contains("instant")) return change();
+  workspace.classList.add("instant");
+  try {
+    return change();
+  } finally {
+    void $("pages-panel").offsetWidth;
+    workspace.classList.remove("instant");
   }
+}
+function fitPagesPanel() {
+  withoutPanelMotion(() => {
+    const workspace = $("workspace"),
+      collapse =
+        !documents.length ||
+        (documents.length === 1 && documents[0].kind === "pdf" && documents[0].pages.length <= 1);
+    if (collapse) {
+      pagesAutoHidden ||= !workspace.classList.contains("pages-hidden");
+      workspace.classList.add("pages-hidden");
+      workspace.classList.remove("pages-open");
+    } else if (pagesAutoHidden) {
+      pagesAutoHidden = false;
+      workspace.classList.remove("pages-hidden");
+    }
+  });
   syncPanelToggles();
 }
 function addDocument(doc) {
-  if (!documents.length) {
-    $("workspace").classList.remove("pages-hidden");
-    pagesAutoHidden = false;
-  }
-  documents.push(doc);
-  fitPagesPanel();
+  enteringDocument = doc.id;
+  withoutPanelMotion(() => {
+    if (!documents.length) {
+      $("workspace").classList.remove("pages-hidden");
+      pagesAutoHidden = false;
+    }
+    documents.push(doc);
+    fitPagesPanel();
+  });
   activate(doc);
 }
 function revealSection(name, visible, open = true) {
@@ -1377,7 +1420,10 @@ async function drainPreviews() {
         if (controller.signal.aborted || !slot.isConnected)
           freeCanvas(canvas);
         else {
-          freeCanvas(slot.querySelector(".page-preview"));
+          const previous = slot.querySelector(".page-preview");
+          if (!previous && entrance?.documentId !== doc.id)
+            canvas.classList.add("appearing");
+          freeCanvas(previous);
           slot.prepend(canvas);
           slot.dataset.preview = key;
         }
@@ -1611,6 +1657,9 @@ async function renderPage({ animate = false, preserveNavigation = false } = {}) 
   $("link-layer").replaceChildren();
   const page = current(),
     doc = active();
+  if (entrance && entrance.documentId !== doc?.id) dropEntrance();
+  const entering = !!page && enteringDocument === doc?.id;
+  if (doc?.id === enteringDocument) enteringDocument = null;
   const reveal = animate || (
     preserveNavigation && pendingPageReveal !== null &&
     pendingPageReveal?.documentId === doc?.id &&
@@ -1652,6 +1701,7 @@ async function renderPage({ animate = false, preserveNavigation = false } = {}) 
   }
   scale = desiredScale(page);
   renderFlow(doc, page);
+  if (entering) startEntrance(doc);
   renderedViewport = viewportKey();
   mainCanvasPage = null;
   const size = displayedSize(page);
@@ -1682,11 +1732,13 @@ async function renderPage({ animate = false, preserveNavigation = false } = {}) 
       $("page-loading").hidden = true;
       mainCanvasPage = page.id;
       pendingPageReveal = null;
-      if (reveal) fadeContent(stage);
+      if (entrance?.documentId === doc.id) playEntrance();
+      else if (reveal) fadeContent(stage);
     }
   } catch (error) {
     if (generation === renderGeneration) {
       pendingPageReveal = null;
+      playEntrance();
       $("page-loading").hidden = true;
       if (
         error.name !== "RenderingCancelledException" &&
@@ -4613,7 +4665,7 @@ async function saveDocument({ choose = false } = {}) {
       await stream.abort().catch(() => {});
       throw error;
     }
-  });
+  }, { silent: true });
   if (doc.handle !== handle) {
     doc.handle = handle;
     doc.name = handle.name.replace(/\.pdf$/i, "");

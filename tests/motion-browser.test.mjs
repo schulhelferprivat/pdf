@@ -189,24 +189,38 @@ test("Browser: Nur gezielte Dokument-, Seiten- und Kapitelwechsel blenden fertig
     window.contentFades = [];
     const animate = Element.prototype.animate;
     Element.prototype.animate = function (frames, options) {
-      if (this.id === "page-stage" || this.classList.contains("epub-book")) {
+      if (this.id === "page-stage" || this.id === "page-flow" || this.classList.contains("epub-book")) {
         window.contentFades.push({
           target: this.id || this.className,
           page: this.parentElement.dataset.page,
           loading: !document.querySelector("#page-loading").hidden,
           frames,
           duration: options.duration,
+          fill: options.fill,
         });
       }
       return animate.call(this, frames, options);
     };
   });
   await openBlankDocument(b, 5);
-  await b.wait(() => window.contentFades.length === 1);
   assert.deepEqual(await b.evaluate(() => {
     const fade = window.contentFades[0];
-    return { target: fade.target, loading: fade.loading, frames: fade.frames, duration: fade.duration };
-  }), { target: "page-stage", loading: false, frames: [{ opacity: 0.45 }, { opacity: 1 }], duration: 180 });
+    return {
+      count: window.contentFades.length,
+      target: fade.target,
+      frames: fade.frames,
+      duration: fade.duration,
+      fill: fade.fill,
+      paused: document.querySelector("#page-flow").getAnimations().some((animation) => animation.playState === "paused"),
+    };
+  }), {
+    count: 1,
+    target: "page-flow",
+    frames: [{ opacity: 0, translate: "0 10px" }, { opacity: 1, translate: "0 0" }],
+    duration: 320,
+    fill: "backwards",
+    paused: false,
+  });
   await b.evaluate(() => {
     window.contentFades.length = 0;
     document.querySelectorAll(".thumbnail")[1].click();
