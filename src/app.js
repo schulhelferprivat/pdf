@@ -1535,6 +1535,49 @@ function keepStageCanvas(slot) {
   canvas.className = "page-preview";
   slot.prepend(canvas);
 }
+function sizeSlot(slot, page, pageScale) {
+  const size = displayedSize(page),
+    width = `${size.width * pageScale}px`,
+    height = `${size.height * pageScale}px`;
+  slot.dataset.scale = String(pageScale);
+  if (slot.style.width === width && slot.style.height === height) return false;
+  slot.style.width = width;
+  slot.style.height = height;
+  return true;
+}
+function dropStaleCanvases() {
+  for (const canvas of $("page-stage").querySelectorAll("canvas.stale"))
+    freeCanvas(canvas);
+}
+function followViewport() {
+  const doc = active(),
+    page = current(),
+    stage = $("page-stage"),
+    scroller = $("page-scroll"),
+    anchor = stage.parentElement;
+  if (!page || typeof zoom !== "string" || !anchor?.classList.contains("page-slot"))
+    return;
+  const pages = new Map(doc.pages.map((candidate) => [candidate.id, candidate])),
+    slots = [...$("page-flow").children],
+    scales = slots.map((slot) => {
+      const candidate = pages.get(slot.dataset.page);
+      return candidate && desiredScale(candidate);
+    }),
+    next = scales[slots.indexOf(anchor)],
+    offset = scroller.scrollTop - anchor.offsetTop,
+    height = anchor.offsetHeight;
+  if (!next) return;
+  let resized = false;
+  slots.forEach((slot, index) => {
+    if (scales[index] && sizeSlot(slot, pages.get(slot.dataset.page), scales[index]))
+      resized = true;
+  });
+  stage.style.scale = next === scale ? "" : String(next / scale);
+  if (resized)
+    scroller.scrollTop =
+      anchor.offsetTop +
+      (offset < 0 ? offset : (offset / height) * anchor.offsetHeight);
+}
 function renderFlow(doc, page) {
   const flow = $("page-flow"),
     scroller = $("page-scroll"),
@@ -1571,20 +1614,15 @@ function renderFlow(doc, page) {
       slot.dataset.page = candidate.id;
       previewObserver.observe(slot);
     }
-    const pageScale = candidate === page ? scale : desiredScale(candidate),
-      size = displayedSize(candidate),
-      width = `${size.width * pageScale}px`,
-      height = `${size.height * pageScale}px`;
-    if (slot.style.width !== width || slot.style.height !== height) {
+    if (sizeSlot(slot, candidate, candidate === page ? scale : desiredScale(candidate)))
       resized = true;
-      slot.style.width = width;
-      slot.style.height = height;
-    }
-    slot.dataset.scale = String(pageScale);
     return slot;
   });
   const target = slots[doc.pages.indexOf(page)];
-  if (previousSlot !== target) keepStageCanvas(previousSlot);
+  if (previousSlot !== target) {
+    keepStageCanvas(previousSlot);
+    dropStaleCanvases();
+  }
   target.append(stage);
   if (
     slots.length !== flow.children.length ||
@@ -1703,16 +1741,28 @@ async function renderPage({ animate = false, preserveNavigation = false } = {}) 
   renderFlow(doc, page);
   if (entering) startEntrance(doc);
   renderedViewport = viewportKey();
-  mainCanvasPage = null;
   const size = displayedSize(page);
   const stage = $("page-stage");
   stage.style.width = `${size.width * scale}px`;
   stage.style.height = `${size.height * scale}px`;
+  stage.style.scale = "";
   stage.dataset.tool = tool;
   const old = $("page-canvas"),
-    canvas = document.createElement("canvas");
+    canvas = document.createElement("canvas"),
+    keep =
+      mainCanvasPage === page.id &&
+      Math.abs(old.width / old.height - size.width / size.height) < 0.01;
+  mainCanvasPage = null;
   canvas.id = "page-canvas";
-  old.replaceWith(canvas);
+  canvas.className = "pending";
+  if (keep) {
+    old.removeAttribute("id");
+    old.className = "stale";
+    old.after(canvas);
+  } else {
+    dropStaleCanvases();
+    old.replaceWith(canvas);
+  }
   $("page-loading").hidden = false;
   renderElements();
   renderForms();
@@ -1729,6 +1779,8 @@ async function renderPage({ animate = false, preserveNavigation = false } = {}) 
     );
     await layersReady;
     if (generation === renderGeneration) {
+      canvas.classList.remove("pending");
+      dropStaleCanvases();
       $("page-loading").hidden = true;
       mainCanvasPage = page.id;
       pendingPageReveal = null;
@@ -1737,6 +1789,8 @@ async function renderPage({ animate = false, preserveNavigation = false } = {}) 
     }
   } catch (error) {
     if (generation === renderGeneration) {
+      canvas.classList.remove("pending");
+      dropStaleCanvases();
       pendingPageReveal = null;
       playEntrance();
       $("page-loading").hidden = true;
@@ -4543,6 +4597,7 @@ $("editor").addEventListener("pointerleave", () =>
 );
 let resizeTimer;
 new ResizeObserver(() => {
+  followViewport();
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
     if (
@@ -4976,6 +5031,7 @@ const actions = {
     $("page-view-button").setAttribute("aria-pressed", String(twoPages));
     void renderPage();
     if (current()) scrollToPage(current().id);
+    fadeContent($("page-flow"));
   },
   "zoom-in": () => zoomBy(1.2),
   "zoom-out": () => zoomBy(1 / 1.2),

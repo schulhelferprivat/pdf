@@ -1009,12 +1009,23 @@ h3 {
   color: #111;
   color-scheme: light;
   isolation: isolate;
+  transform-origin: 0 0;
 }
 .page-scroll > .page-stage {
   display: none;
 }
 #page-canvas {
   display: block;
+  width: 100%;
+  height: 100%;
+}
+#page-canvas.pending {
+  opacity: 0;
+}
+.page-stage > canvas.stale {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
   width: 100%;
   height: 100%;
 }
@@ -1319,6 +1330,16 @@ h3 {
   box-shadow: var(--shadow);
   border-radius: 7px;
   z-index: 8;
+  animation: page-loading-in var(--motion-reveal) var(--motion-ease) 500ms backwards;
+}
+.page-slot:has(> .page-preview) .page-loading,
+.page-stage:has(> canvas.stale) .page-loading {
+  display: none;
+}
+@keyframes page-loading-in {
+  from {
+    opacity: 0;
+  }
 }
 .section-eyebrow {
   font-size: 0.6923rem;
@@ -2480,6 +2501,9 @@ textarea,
   .dialog::backdrop {
     animation: none !important;
     transition: none !important;
+  }
+  .page-loading {
+    animation: page-loading-in 1ms linear 500ms backwards !important;
   }
   @supports selector(details::details-content) {
     details::details-content {
