@@ -3,7 +3,6 @@ import { readToolbarPinned, writeToolbarPinned } from "./settings.js";
 export function setupToolbar() {
   const shell = document.querySelector(".app-shell"),
     toolbar = document.getElementById("editor-topbar"),
-    pin = document.getElementById("toolbar-pin"),
     noHover = matchMedia("(hover: none)"),
     menus = ["recent-menu", "history-menu", "tool-style-menu", "context-menu"]
       .map((id) => document.getElementById(id));
@@ -23,16 +22,14 @@ export function setupToolbar() {
       visible = pinned || noHover.matches || nearTop || focused || menus.some(menuOpen);
     shell.classList.toggle("toolbar-visible", visible);
     shell.classList.toggle("toolbar-reserved", pinned || noHover.matches);
-    pin.setAttribute("aria-pressed", String(pinned));
-    pin.title = pinned ? "Toolbar lösen" : "Toolbar festpinnen";
-    pin.setAttribute("aria-label", pin.title);
+    toolbar.dataset.pinned = String(pinned);
   }
 
-  pin.addEventListener("click", () => {
+  function togglePinned() {
     pinned = !pinned;
     writeToolbarPinned(pinned);
     sync();
-  });
+  }
   function pointerMove(event, frame = null) {
     const bounds = shell.getBoundingClientRect();
     const offset = frame?.getBoundingClientRect(),
@@ -81,4 +78,5 @@ export function setupToolbar() {
     menu.addEventListener("toggle", sync);
   }
   sync();
+  return { isPinned: () => pinned, togglePinned };
 }

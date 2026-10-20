@@ -1,3 +1,4 @@
+import { togglePin } from "./helpers/panels.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { browser } from "./helpers/browser.mjs";
@@ -121,8 +122,8 @@ test("Browser: Sidebar-Tastatursteuerung, Sitzungsbreiten und abgebrochene Geste
     const handle = document.getElementById(`${name}-resizer`);
     return [handle.getAttribute("role"), handle.getAttribute("aria-orientation"), Number(handle.getAttribute("aria-valuenow"))];
   })), [["separator", "vertical", initial[0] + 10], ["separator", "vertical", initial[1] + 50]]);
+  await togglePin(b, "sidebar");
   await b.evaluate(() => {
-    document.querySelector("#sidebar-pin").click();
     document.activeElement?.blur();
     document.querySelector('[data-action="toggle-comments"]').click();
   });
@@ -130,8 +131,8 @@ test("Browser: Sidebar-Tastatursteuerung, Sitzungsbreiten und abgebrochene Geste
     !document.querySelector("#workspace").classList.contains("sidebar-visible"),
     document.getElementById("comments-panel").hidden,
   ]), [true, true]);
+  await togglePin(b, "sidebar");
   await b.evaluate(() => {
-    document.querySelector("#sidebar-pin").click();
     document.activeElement?.blur();
     document.querySelector('[data-action="toggle-comments"]').click();
   });
@@ -171,9 +172,9 @@ test("Browser: manuelle Sidebarbreiten werden bei Fensteränderungen begrenzt un
   await b.command("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await b.evaluate(() => {
     document.querySelector('[data-action="toggle-comments"]').click();
-    document.querySelector("#sidebar-pin").click();
     document.activeElement?.blur();
   });
+  await togglePin(b, "sidebar");
   await b.command("Input.dispatchMouseEvent", { type: "mouseMoved", x: 10, y: 200 });
   await b.wait(() => document.querySelector("#workspace").classList.contains("sidebar-visible"));
   const editorWidth = await b.evaluate(() => document.getElementById("editor").clientWidth);
@@ -182,8 +183,8 @@ test("Browser: manuelle Sidebarbreiten werden bei Fensteränderungen begrenzt un
   assert.equal(await b.evaluate(() => document.getElementById("editor").clientWidth), editorWidth);
   await doubleClick(b, "pages");
   assert.equal((await widths(b))[0], 160);
+  await togglePin(b, "sidebar");
   await b.evaluate(() => {
-    document.querySelector("#sidebar-pin").click();
     document.activeElement?.blur();
     document.querySelector('[data-action="toggle-comments"]').click();
   });

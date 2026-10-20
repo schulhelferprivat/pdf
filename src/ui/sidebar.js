@@ -4,9 +4,10 @@ export function setupSidebar(shouldReserve) {
   const shell = document.querySelector(".app-shell"),
     workspace = document.getElementById("workspace"),
     panel = document.getElementById("pages-panel"),
-    pin = document.getElementById("sidebar-pin"),
     grip = document.getElementById("sidebar-grip"),
     menu = document.getElementById("context-menu"),
+    scroller = document.getElementById("page-scroll"),
+    flow = document.getElementById("page-flow"),
     noHover = matchMedia("(hover: none)");
   let pinned = readSidebarPinned(),
     keyboard = true,
@@ -14,14 +15,37 @@ export function setupSidebar(shouldReserve) {
     touchOpen = false,
     context = false,
     resizing = null,
-    dragging = false;
+    dragging = false,
+    geometryFrame = 0;
+
+  function nearEdge(bounds) {
+    if (scroller.hidden) return point.x <= bounds.left + 96;
+    const viewport = scroller.getBoundingClientRect();
+    let edge = Infinity;
+    for (const slot of flow.children) {
+      const rect = slot.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0 &&
+          rect.bottom > viewport.top && rect.top < viewport.bottom &&
+          rect.right > viewport.left && rect.left < viewport.right)
+        edge = Math.min(edge, rect.left);
+    }
+    return Number.isFinite(edge) && point.x < edge;
+  }
+
+  function scheduleSync() {
+    if (geometryFrame) return;
+    geometryFrame = requestAnimationFrame(() => {
+      geometryFrame = 0;
+      sync();
+    });
+  }
 
   function sync() {
     const bounds = shell.getBoundingClientRect(),
       rect = panel.getBoundingClientRect(),
       inside = point && point.y >= bounds.top && point.y <= bounds.bottom &&
         point.x >= bounds.left && point.x <= bounds.right &&
-        (point.x <= bounds.left + 96 ||
+        (nearEdge(bounds) ||
           (workspace.classList.contains("sidebar-visible") && point.y >= rect.top &&
             point.y <= rect.bottom && point.x <= bounds.left + panel.offsetWidth)),
       reserved = pinned && shouldReserve(),
@@ -30,9 +54,7 @@ export function setupSidebar(shouldReserve) {
         (context && menu.matches(":popover-open")) || resizing !== null || dragging;
     workspace.classList.toggle("sidebar-reserved", reserved);
     workspace.classList.toggle("sidebar-visible", !!visible);
-    pin.setAttribute("aria-pressed", String(pinned));
-    pin.title = pinned ? "Sidebar lösen" : "Sidebar festpinnen";
-    pin.setAttribute("aria-label", pin.title);
+    panel.dataset.pinned = String(pinned);
     grip.hidden = !noHover.matches || !!visible;
     grip.setAttribute("aria-expanded", String(!!visible));
   }
@@ -57,14 +79,14 @@ export function setupSidebar(shouldReserve) {
     sync();
   }
 
-  pin.addEventListener("click", () => {
+  function togglePinned() {
     pinned = !pinned;
     writeSidebarPinned(pinned);
     sync();
-  });
+  }
   grip.addEventListener("click", () => {
     touchOpen = true;
-    if (keyboard) pin.focus({ preventScroll: true });
+    if (keyboard) panel.focus({ preventScroll: true });
     sync();
   });
   for (const type of ["pointermove", "pointerover"])
@@ -115,6 +137,20 @@ export function setupSidebar(shouldReserve) {
     sync();
   });
   window.addEventListener("resize", sync);
+  scroller.addEventListener("scroll", scheduleSync, { passive: true });
+  const geometryObserver = new ResizeObserver(scheduleSync);
+  geometryObserver.observe(scroller);
+  geometryObserver.observe(flow);
+  new MutationObserver(scheduleSync).observe(flow, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["class", "style"],
+  });
+  new MutationObserver(scheduleSync).observe(scroller, {
+    attributes: true,
+    attributeFilter: ["hidden"],
+  });
   sync();
-  return sync;
+  return { sync, isPinned: () => pinned, togglePinned };
 }

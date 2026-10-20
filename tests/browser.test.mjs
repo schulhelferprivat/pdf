@@ -1,3 +1,4 @@
+import { togglePin } from "./helpers/panels.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { browser } from "./helpers/browser.mjs";
@@ -997,9 +998,9 @@ test(
           ),
           "true",
         );
-        await b.evaluate(() => document.querySelector("#sidebar-pin").click());
+        await togglePin(b, "sidebar");
         assert.equal(await b.evaluate(() => document.querySelector("#workspace").classList.contains("sidebar-reserved")), false);
-        await b.evaluate(() => document.querySelector("#sidebar-pin").click());
+        await togglePin(b, "sidebar");
         assert.equal(await b.evaluate(() => document.querySelector("#workspace").classList.contains("sidebar-reserved")), true);
         assert.equal(
           await b.evaluate(
@@ -1042,7 +1043,7 @@ test(
         );
         await b.evaluate(() =>
           document
-            .querySelector("#sidebar-pin")
+            .querySelector("#pages-panel")
             .focus(),
         );
         await b.command("Input.dispatchKeyEvent", {
@@ -3206,14 +3207,14 @@ test(
       b.evaluate(() => {
         const button = document.querySelector("#save-button");
         return {
-          beforePin: button.nextElementSibling?.id === "toolbar-pin",
+          lastButton: button.nextElementSibling === null,
           text: button.textContent.trim(),
           label: button.getAttribute("aria-label"),
           dirty: button.classList.contains("dirty"),
         };
       });
     assert.deepEqual(await state(), {
-      beforePin: true,
+      lastButton: true,
       text: "",
       label: "Speichern",
       dirty: false,
@@ -3529,6 +3530,7 @@ test(
       "Umbenennen",
       "Dateinamen kopieren",
       "Schließen",
+      "Toolbar entpinnen",
     ]);
     await choose("Dateinamen kopieren");
     await b.wait(() => window.copied.length === 1);
@@ -3582,6 +3584,7 @@ test(
       "Umbenennen",
       "Dateinamen kopieren",
       "Schließen",
+      "Sidebar entpinnen",
     ]);
     await choose("Umbenennen");
     await rename("Entwurf");
@@ -3949,7 +3952,7 @@ test(
       "In neues Dokument kopieren",
     ];
     const pages = await order();
-    assert.deepEqual(await openMenu(1), [...actions, "Seite entfernen"]);
+    assert.deepEqual(await openMenu(1), [...actions, "Seite entfernen", "Sidebar entpinnen"]);
     await choose();
     await b.wait(
       () => document.querySelectorAll("#page-list .page-item").length === 3,
@@ -3965,7 +3968,7 @@ test(
       checks[1].click();
       checks[2].click();
     });
-    assert.deepEqual(await openMenu(1), [...actions, "2 Seiten entfernen"]);
+    assert.deepEqual(await openMenu(1), [...actions, "2 Seiten entfernen", "Sidebar entpinnen"]);
     await choose();
     await b.wait(
       () => document.querySelectorAll("#page-list .page-item").length === 1,
@@ -4243,6 +4246,7 @@ test(
       ["Nach hinten", true],
       ["In neues Dokument kopieren", false],
       ["Seite entfernen", false],
+      ["Sidebar entpinnen", false],
     ]);
     await choose("Nach vorne");
     assert.deepEqual(await order(), [initial[0], initial[2], initial[1]]);
@@ -4878,7 +4882,7 @@ test(
     await choose(1, { shiftKey: true });
     await showPage(2);
     assert.deepEqual(await selected(), ["Notiz Alpha", "Zeichnung"]);
-    assert.deepEqual(await context(".annotation-entry", 0), ["2 Annotationen löschen"]);
+    assert.deepEqual(await context(".annotation-entry", 0), ["2 Annotationen löschen", "Sidebar entpinnen"]);
     await closeContext();
     assert.deepEqual(await context("#element-layer .annotation"), ["2 Annotationen löschen"]);
     await b.evaluate(() => document.querySelector("#context-menu button").click());
@@ -4886,7 +4890,7 @@ test(
     await history("undo", 2);
     await history("redo", 0);
     await history("undo", 2);
-    assert.deepEqual(await context(".annotation-entry", 0), ["Annotation löschen"]);
+    assert.deepEqual(await context(".annotation-entry", 0), ["Annotation löschen", "Sidebar entpinnen"]);
     await b.evaluate(() => document.querySelector("#context-menu button").click());
     assert.deepEqual((await section()).entries, [["Zeichnung", "S. 3"]]);
     await history("undo", 2);

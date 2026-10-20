@@ -86,10 +86,11 @@ const element = () =>
   current()?.elements.find((el) => el.id === selectedElement);
 installIcons();
 setupDisclosures();
-const syncSidebar = setupSidebar(() => documents.length > 0 &&
+const sidebar = setupSidebar(() => documents.length > 0 &&
   !(documents.length === 1 && documents[0].kind === "pdf" && documents[0].pages.length <= 1));
+const syncSidebar = sidebar.sync;
 setupPanelResizing();
-setupToolbar();
+const toolbar = setupToolbar();
 function message(text, error = false) {
   const toast = $("toast");
   clearTimeout(toastTimer);
@@ -505,7 +506,7 @@ function deleteAnnotations(ids = [...annotationSelection]) {
     const remaining = $("annotation-list").querySelectorAll(".annotation-entry");
     (
       remaining[Math.min(Math.max(0, index), remaining.length - 1)] ||
-      $("sidebar-pin")
+      $("pages-panel")
     )?.focus();
   }
 }
@@ -3378,12 +3379,24 @@ function editableField(target) {
     return null;
   return field;
 }
+function contextRegion(target) {
+  const element = target.closest?.("#editor-topbar, #pages-panel");
+  if (!element) return null;
+  return element.id === "editor-topbar"
+    ? { element, controller: toolbar, label: "Toolbar" }
+    : { element, controller: sidebar, label: "Sidebar" };
+}
+function restoreContextFocus(target) {
+  const element = target?.origin?.isConnected ? target.origin
+    : target?.field?.isConnected ? target.field : target?.region;
+  element?.focus({ preventScroll: true });
+}
 function closeContextMenu(restoreFocus = false) {
   const menu = $("context-menu");
   if (!menu.matches(":popover-open")) return;
   menu.inert = true;
   menu.hidePopover();
-  if (restoreFocus) contextTarget?.field?.focus();
+  if (restoreFocus) restoreContextFocus(contextTarget);
   contextTarget = null;
 }
 function contextItem(label, disabled, run) {
@@ -3395,8 +3408,11 @@ function contextItem(label, disabled, run) {
   item.addEventListener("pointerdown", (event) => event.preventDefault());
   item.addEventListener("click", () => {
     const target = contextTarget;
-    closeContextMenu();
-    void run(target).catch(report);
+    closeContextMenu(target?.keyboard);
+    void run(target).catch(report).finally(() => {
+      if (target?.keyboard && document.activeElement === document.body)
+        restoreContextFocus(target);
+    });
   });
   return item;
 }
@@ -3426,14 +3442,34 @@ async function pasteContext({ field, start, end }) {
   field.dispatchEvent(new Event("change", { bubbles: true }));
 }
 function showContextMenu(event, target, items) {
-  const menu = $("context-menu");
+  const menu = $("context-menu"),
+    region = contextRegion(event.target),
+    keyboard = event.clientX === 0 && event.clientY === 0;
+  if (region) {
+    if (items.length) {
+      const separator = document.createElement("div");
+      separator.setAttribute("role", "separator");
+      items.push(separator);
+    }
+    const item = contextItem(
+      `${region.label} ${region.controller.isPinned() ? "entpinnen" : "anpinnen"}`,
+      false,
+      async () => region.controller.togglePinned(),
+    );
+    item.dataset.action = region.element.id === "editor-topbar" ? "pin-toolbar" : "pin-sidebar";
+    items.push(item);
+  }
   (document.querySelector("dialog[open]") || document.body).append(menu);
   menu.replaceChildren(...items);
-  contextTarget = target;
+  contextTarget = {
+    ...target,
+    keyboard,
+    origin: target.field || event.target.closest?.("button, input, textarea, select, a[href], [tabindex]") || event.target,
+    region: region?.element,
+  };
   menu.inert = false;
   menu.showPopover();
-  const keyboard = event.clientX === 0 && event.clientY === 0,
-    anchor = keyboard ? event.target.getBoundingClientRect() : null,
+  const anchor = keyboard ? event.target.getBoundingClientRect() : null,
     x = keyboard ? anchor.left : event.clientX,
     y = keyboard ? anchor.bottom : event.clientY,
     rect = menu.getBoundingClientRect();
@@ -3465,6 +3501,7 @@ document.addEventListener("contextmenu", (event) => {
           (value) => renameRecent(entry, value),
         ),
       );
+    else if (contextRegion(event.target)) showContextMenu(event, {}, []);
     return;
   }
   if (named) {
@@ -3479,6 +3516,7 @@ document.addEventListener("contextmenu", (event) => {
         () => editName(named, doc.name, (value) => renameDocument(doc, value)),
         () => closeDocument(doc),
       );
+    else if (contextRegion(event.target)) showContextMenu(event, {}, []);
     return;
   }
   const pageEntry = event.target.closest?.("#page-list .page-item"),
@@ -3557,6 +3595,10 @@ document.addEventListener("contextmenu", (event) => {
     ]);
     return;
   }
+  if (contextRegion(event.target)) {
+    showContextMenu(event, {}, []);
+    return;
+  }
   const selection = getSelection(),
     text = selection?.toString() ?? "";
   if (
@@ -3574,6 +3616,12 @@ document.addEventListener("pointerdown", (event) => {
 document.addEventListener(
   "keydown",
   (event) => {
+    if ((event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey)) && contextRegion(event.target)) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.target.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+      return;
+    }
     if (!$("context-menu").matches(":popover-open")) return;
     const items = [
         ...$("context-menu").querySelectorAll("button:not(:disabled)"),
@@ -3594,6 +3642,10 @@ document.addEventListener(
             : items.length - 1
           : (index + step + items.length) % items.length
       ]?.focus();
+    } else if ((event.key === "Enter" || event.key === " ") && index >= 0) {
+      event.preventDefault();
+      event.stopPropagation();
+      items[index].click();
     } else if (index < 0) closeContextMenu();
   },
   true,

@@ -1,3 +1,4 @@
+import { togglePin } from "./helpers/panels.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { browser } from "./helpers/browser.mjs";
@@ -161,19 +162,17 @@ test("Browser: Menüs und Dialoge blenden ein und aus und bleiben direkt bedienb
   for (const width of [1440, 390]) {
     await b.command("Emulation.setDeviceMetricsOverride", { width, height: 960, deviceScaleFactor: 1, mobile: false });
     await b.wait((width) => innerWidth === width, 30000, width);
-    await b.evaluate(() => {
-      const pin = document.querySelector("#sidebar-pin");
-      if (pin.getAttribute("aria-pressed") !== "true") pin.click();
-      document.activeElement?.blur();
-    });
+    if (await b.evaluate(() => document.querySelector("#pages-panel").dataset.pinned !== "true"))
+      await togglePin(b, "sidebar");
+    await b.evaluate(() => document.activeElement?.blur());
     await b.evaluate(async () => {
       await Promise.all(document.querySelector("#pages-panel").getAnimations().map((animation) => animation.finished.catch(() => {})));
     });
     await b.screenshot(`/tmp/pdfhelper-motion-sidebar-${width}.png`);
     await b.command("Input.dispatchMouseEvent", { type: "mouseMoved", x: width - 10, y: 500 });
+    await togglePin(b, "sidebar");
     assert.deepEqual(await b.evaluate(async () => {
       const panel = document.querySelector("#pages-panel");
-      document.querySelector("#sidebar-pin").click();
       document.activeElement?.blur();
       await new Promise(queueMicrotask);
       const animations = panel.getAnimations();
@@ -328,9 +327,8 @@ test("Browser: Nur gezielte Dokument-, Seiten- und Kapitelwechsel blenden fertig
   await b.evaluate(() => document.querySelector('[data-action="next"]').click());
   await b.wait(() => document.querySelector("#page-loading").hidden);
   assert.equal(await b.evaluate(() => window.contentFades.length), 0);
+  await togglePin(b, "sidebar");
   assert.deepEqual(await b.evaluate(() => {
-    const toggle = document.querySelector("#sidebar-pin");
-    toggle.click();
     const panel = document.querySelector("#pages-panel");
     return [getComputedStyle(panel).transitionDuration, panel.getAnimations().length];
   }), ["0s", 0]);

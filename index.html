@@ -30,6 +30,7 @@
           class="editor-topbar"
           id="editor-topbar"
           aria-label="PDF-Werkzeuge"
+          tabindex="0"
         >
           <div class="open-group" id="open-group">
             <button
@@ -266,15 +267,6 @@
             aria-label="Speichern"
             title="Speichern (Strg/⌘ S)"
           ></button>
-          <button
-            id="toolbar-pin"
-            type="button"
-            data-icon="pin"
-            class="icon-button"
-            aria-label="Toolbar lösen"
-            aria-pressed="true"
-            title="Toolbar lösen"
-          ></button>
         </nav>
       </div>
       <div class="workspace" id="workspace">
@@ -283,16 +275,8 @@
             class="pages-panel"
             id="pages-panel"
             aria-label="Seitenübersicht"
+            tabindex="0"
           >
-            <button
-              id="sidebar-pin"
-              type="button"
-              data-icon="pin"
-              class="icon-button"
-              aria-label="Sidebar lösen"
-              aria-pressed="true"
-              title="Sidebar lösen"
-            ></button>
             <div
               id="pages-resizer"
               class="panel-resizer"
@@ -329,28 +313,32 @@
                 aria-label="Inhaltsverzeichnis"
               ></nav>
             </details>
-            <div class="page-bulk" role="group" aria-label="Seitenauswahl">
-              <button
-                type="button"
-                data-action="select-all"
-                data-icon="select-all"
-                class="icon-button bulk-select-button"
-                aria-label="Alle Seiten auswählen"
-                title="Alle Seiten auswählen"
-              ></button>
-              <button
-                type="button"
-                data-action="select-none"
-                data-icon="select-none"
-                class="icon-button bulk-select-button"
-                aria-label="Seitenauswahl aufheben"
-                title="Seitenauswahl aufheben"
-              ></button>
-              <button data-action="split" data-icon="split" hidden>
-                Aufteilen
-              </button>
+            <div class="pages-content">
+              <div class="page-bulk" role="group" aria-label="Seitenauswahl">
+                <button
+                  type="button"
+                  data-action="select-all"
+                  data-icon="select-all"
+                  class="icon-button bulk-select-button document-action"
+                  aria-label="Alle Seiten auswählen"
+                  title="Alle Seiten auswählen"
+                  disabled
+                ></button>
+                <button
+                  type="button"
+                  data-action="select-none"
+                  data-icon="select-none"
+                  class="icon-button bulk-select-button document-action"
+                  aria-label="Seitenauswahl aufheben"
+                  title="Seitenauswahl aufheben"
+                  disabled
+                ></button>
+                <button data-action="split" data-icon="split" hidden>
+                  Aufteilen
+                </button>
+              </div>
+              <div id="page-list" class="page-list"></div>
             </div>
-            <div id="page-list" class="page-list"></div>
             <details
               class="side-section side-section-bottom"
               data-side-section="annotations"
@@ -1118,8 +1106,12 @@
           verloren. Download-Dateien werden nur auf deinen Wunsch erstellt.
           Die Pin-Einstellungen der Toolbar und der linken Sidebar werden lokal
           auf diesem Gerät gespeichert. Ohne gespeicherte Einstellung sind beide
-          Pins aktiv. Gelöst erscheinen die Leisten bei Mausnähe am jeweiligen
-          Rand. Auf Touchgeräten öffnet der Griff am linken Rand die Sidebar.
+          Leisten angepinnt. Per Rechtsklick auf die Toolbar oder die linke
+          Sidebar kannst du sie anpinnen oder entpinnen. Mit Tastaturfokus auf
+          einer Leiste öffnest du das Kontextmenü über Umschalt F10 oder die
+          Kontextmenütaste. Entpinnt erscheinen die Toolbar bei Mausnähe am
+          oberen Rand und die Sidebar im freien Bereich links neben dem PDF.
+          Auf Touchgeräten öffnet der Griff am linken Rand die Sidebar.
         </p>
         <p>
           Grenzen: 100 MiB pro PDF, 150 MiB pro Zusammenführung, 500 Seiten pro

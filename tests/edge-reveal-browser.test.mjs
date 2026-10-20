@@ -1,3 +1,4 @@
+import { togglePin } from "./helpers/panels.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { browser } from "./helpers/browser.mjs";
@@ -15,7 +16,7 @@ async function visible(b, id, shown) {
 
 async function setup(t, reducedMotion = true) {
   const b = await browser(t, { toolbarPinned: false, reducedMotion });
-  await b.evaluate(() => document.querySelector("#sidebar-pin").click());
+  await togglePin(b, "sidebar");
   await move(b, 700, 400);
   await visible(b, "editor-topbar", false);
   await visible(b, "pages-panel", false);
@@ -87,7 +88,7 @@ test("Browser: Schneller Wechsel vom Rand auf die einfahrende Sidebar hält sie 
   await move(b, 80, 250);
   await move(b, 140, 250);
   await visible(b, "pages-panel", true);
-  assert.equal(await b.evaluate(() => document.querySelector("#sidebar-pin").getAttribute("aria-pressed")), "false");
+  assert.equal(await b.evaluate(() => document.querySelector("#pages-panel").dataset.pinned), "false");
   await move(b, 700, 400);
   await visible(b, "pages-panel", false);
   assert.deepEqual(b.errors, []);

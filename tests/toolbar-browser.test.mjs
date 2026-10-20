@@ -1,3 +1,4 @@
+import { togglePin } from "./helpers/panels.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -78,7 +79,7 @@ test("Browser: Toolbar gleitet bei Mausnähe ein, ohne das Dokument zu verschieb
   assert.deepEqual(b.errors, []);
 });
 
-test("Browser: Pin reserviert Platz, bleibt gespeichert und ist bei schmalen Fenstern erreichbar", { timeout: 60000 }, async (t) => {
+test("Browser: Anpinnen per Kontextmenü reserviert Platz, bleibt gespeichert und ist bei schmalen Fenstern erreichbar", { timeout: 60000 }, async (t) => {
   const b = await browser(t);
   await openBlankDocument(b, 3);
   await b.evaluate(() => { document.querySelector("#page-scroll").scrollTop = 300; });
@@ -86,23 +87,22 @@ test("Browser: Pin reserviert Platz, bleibt gespeichert und ist bei schmalen Fen
   await move(b, 500, 10);
   await settled(b, true);
   assert.equal((await geometry(b)).scroll, before.scroll);
-  await click(b, "#toolbar-pin");
+  await togglePin(b, "toolbar");
   await move(b, 500, 300);
   await settled(b, true);
   assert.deepEqual(await b.evaluate(() => ({
-    pinned: document.querySelector("#toolbar-pin").getAttribute("aria-pressed"),
-    label: document.querySelector("#toolbar-pin").title,
+    pinned: document.querySelector("#editor-topbar").dataset.pinned,
     stored: localStorage.getItem("pdfhelper:toolbar-pinned"),
     top: document.querySelector("#workspace").getBoundingClientRect().top,
-  })), { pinned: "true", label: "Toolbar lösen", stored: "true", top: 43 });
+  })), { pinned: "true", stored: "true", top: 43 });
   await b.navigate();
-  await b.wait(() => document.querySelector("#toolbar-pin")?.getAttribute("aria-pressed") === "true");
+  await b.wait(() => document.querySelector("#editor-topbar")?.dataset.pinned === "true");
   await settled(b, true);
   assert.equal((await geometry(b)).top, 43);
   const otherTab = await b.newTab();
   assert.equal(await otherTab(async () => {
     for (let attempt = 0; attempt < 100; attempt++) {
-      if (document.querySelector("#toolbar-pin")?.getAttribute("aria-pressed") === "true") return true;
+      if (document.querySelector("#editor-topbar")?.dataset.pinned === "true") return true;
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
     return false;
@@ -110,17 +110,17 @@ test("Browser: Pin reserviert Platz, bleibt gespeichert und ist bei schmalen Fen
   for (const width of [768, 390, 320]) {
     await b.command("Emulation.setDeviceMetricsOverride", { width, height: 960, deviceScaleFactor: 1, mobile: false });
     assert.equal(await b.evaluate(() => {
-      const rect = document.querySelector("#toolbar-pin").getBoundingClientRect();
+      const rect = document.querySelector("#save-button").getBoundingClientRect();
       return rect.left >= 0 && rect.right <= innerWidth &&
-        document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)?.closest("button")?.id === "toolbar-pin";
+        document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)?.closest("button")?.id === "save-button";
     }), true);
   }
-  await click(b, "#toolbar-pin");
+  await togglePin(b, "toolbar");
   await move(b, 200, 300);
   await settled(b, false);
   assert.equal((await geometry(b)).top, 0);
   await b.navigate();
-  await b.wait(() => !!document.querySelector("#toolbar-pin .icon"));
+  await b.wait(() => !!document.querySelector("#editor-topbar")?.dataset.pinned);
   await move(b, 200, 300);
   await settled(b, false);
   assert.deepEqual(b.errors, []);
@@ -172,16 +172,16 @@ test("Browser: Blockierter Einstellungsspeicher verhindert das Festpinnen nicht"
     source: 'Object.defineProperty(window, "localStorage", { get() { throw new DOMException("Blockiert", "SecurityError"); } });',
   });
   await b.navigate();
-  await b.wait(() => !!document.querySelector("#toolbar-pin .icon"));
+  await b.wait(() => !!document.querySelector("#editor-topbar")?.dataset.pinned);
   await move(b, 500, 300);
   await settled(b, true);
   assert.equal((await geometry(b)).top, 43);
-  await click(b, "#toolbar-pin");
+  await togglePin(b, "toolbar");
   await move(b, 500, 300);
   await settled(b, false);
   await move(b, 500, 10);
   await settled(b, true);
-  await click(b, "#toolbar-pin");
+  await togglePin(b, "toolbar");
   await move(b, 500, 300);
   await settled(b, true);
   assert.deepEqual(b.errors, []);
@@ -198,7 +198,7 @@ test("Browser: Reduzierte Bewegung und Touch behalten die Toolbar bedienbar", { 
   await b.wait(() => matchMedia("(hover: none)").matches);
   await settled(b, true);
   assert.equal((await geometry(b)).top, 43);
-  assert.equal(await b.evaluate(() => document.querySelector("#toolbar-pin").getAttribute("aria-pressed")), "false");
+  assert.equal(await b.evaluate(() => document.querySelector("#editor-topbar").dataset.pinned), "false");
   await b.command("Emulation.setTouchEmulationEnabled", { enabled: false });
   await settled(b, false);
   assert.equal((await geometry(b)).top, 0);
@@ -232,7 +232,7 @@ test("Browser: Simulierte macOS- und Windows-Fensterbereiche bleiben stationär"
   const css = await readFile(new URL("../src/ui/app.css", import.meta.url), "utf8");
   b.override("src/ui/app.css", css.replaceAll("(display-mode: window-controls-overlay)", "(min-width: 0px)"));
   await b.navigate();
-  await b.wait(() => !!document.querySelector("#toolbar-pin .icon"));
+  await b.wait(() => !!document.querySelector("#editor-topbar")?.dataset.pinned);
   for (const [left, right] of [[80, 0], [0, 140]]) {
     await b.evaluate(({ left, right }) => {
       const style = document.documentElement.style;
@@ -249,21 +249,21 @@ test("Browser: Simulierte macOS- und Windows-Fensterbereiche bleiben stationär"
     assert.equal((await geometry(b)).top, 32);
     assert.equal(await b.evaluate(({ left, right }) => {
       const first = document.querySelector("#editor-topbar button").getBoundingClientRect();
-      const last = document.querySelector("#toolbar-pin").getBoundingClientRect();
+      const last = document.querySelector("#save-button").getBoundingClientRect();
       return first.left >= left && last.right <= innerWidth - right;
     }, { left, right }), true);
-    await click(b, "#toolbar-pin");
+    await togglePin(b, "toolbar");
     await move(b, 500, 300);
     await settled(b, true);
     assert.equal((await geometry(b)).top, 43);
-    await click(b, "#toolbar-pin");
+    await togglePin(b, "toolbar");
     await b.command("Emulation.setDeviceMetricsOverride", { width: 320, height: 960, deviceScaleFactor: 1, mobile: false });
     await move(b, 150, 50);
     await settled(b, true);
     assert.equal(await b.evaluate(({ right }) => {
-      const rect = document.querySelector("#toolbar-pin").getBoundingClientRect();
+      const rect = document.querySelector("#save-button").getBoundingClientRect();
       return rect.left >= 0 && rect.right <= innerWidth - right &&
-        document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)?.closest("button")?.id === "toolbar-pin";
+        document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)?.closest("button")?.id === "save-button";
     }, { right }), true);
     await b.command("Emulation.setDeviceMetricsOverride", { width: 1440, height: 960, deviceScaleFactor: 1, mobile: false });
   }
