@@ -31,13 +31,13 @@ export function setupToolbar() {
     sync();
   }
   function pointerMove(event, frame = null) {
+    if (event.pointerType && event.pointerType !== "mouse") return;
     const bounds = shell.getBoundingClientRect();
     const offset = frame?.getBoundingClientRect(),
       x = event.clientX + (offset?.left || 0),
       y = event.clientY + (offset?.top || 0);
-    const next = event.pointerType === "mouse" &&
-      x >= bounds.left && x <= bounds.right &&
-      y >= bounds.top && y <= bounds.top + 96;
+    const next = x >= bounds.left && x <= bounds.right && y >= bounds.top &&
+      (y <= bounds.top + 96 || toolbar.contains(event.target));
     if (next === nearTop) return;
     nearTop = next;
     sync();

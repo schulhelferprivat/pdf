@@ -79,6 +79,34 @@ test("Browser: Toolbar gleitet bei Mausnähe ein, ohne das Dokument zu verschieb
   assert.deepEqual(b.errors, []);
 });
 
+test("Browser: Toolbar bleibt beim Wechsel auf die Leiste und ihre Schaltflächen sichtbar", { timeout: 30000 }, async (t) => {
+  const b = await browser(t, { reducedMotion: false });
+  await move(b, 500, 300);
+  await settled(b, false);
+  await move(b, 500, 80);
+  for (const selector of ["#editor-topbar", ".editor-controls", '[data-tool="select"]', '[data-tool="select"] .icon', "#save-button"]) {
+    const point = await b.evaluate((selector) => {
+      const rect = document.querySelector(selector).getBoundingClientRect();
+      return { x: rect.x + rect.width / 2, y: Math.max(1, rect.y + rect.height / 2) };
+    }, selector);
+    await move(b, point.x, point.y);
+    await settled(b, true);
+    await b.evaluate((selector) => {
+      const element = document.querySelector(selector),
+        rect = element.getBoundingClientRect();
+      element.dispatchEvent(new PointerEvent("pointerover", {
+        bubbles: true, clientX: rect.x + rect.width / 2, clientY: rect.y + rect.height / 2,
+      }));
+    }, selector);
+    assert.equal(await b.evaluate(() => document.querySelector(".app-shell").classList.contains("toolbar-visible")), true, selector);
+  }
+  await click(b, '[data-tool="select"]');
+  await settled(b, true);
+  await move(b, 500, 300);
+  await settled(b, false);
+  assert.deepEqual(b.errors, []);
+});
+
 test("Browser: Anpinnen per Kontextmenü reserviert Platz, bleibt gespeichert und ist bei schmalen Fenstern erreichbar", { timeout: 60000 }, async (t) => {
   const b = await browser(t);
   await openBlankDocument(b, 3);
@@ -245,8 +273,21 @@ test("Browser: Simulierte macOS- und Windows-Fensterbereiche bleiben stationär"
     assert.equal((await geometry(b)).top, 32);
     assert.equal(await b.evaluate(() => getComputedStyle(document.querySelector(".toolbar-frame")).getPropertyValue("app-region")), "drag");
     await move(b, 500, 50);
+    await move(b, 500, 5);
     await settled(b, true);
     assert.equal((await geometry(b)).top, 32);
+    assert.equal(await b.evaluate(() => getComputedStyle(document.querySelector(".toolbar-frame")).getPropertyValue("app-region")), "no-drag");
+    assert.equal(await b.evaluate(() => getComputedStyle(document.querySelector("#editor-topbar")).getPropertyValue("app-region")), "no-drag");
+    const point = await b.evaluate(() => {
+      const rect = document.querySelector("#editor-topbar").getBoundingClientRect();
+      return { x: rect.x + rect.width / 2, y: rect.bottom - 3 };
+    });
+    await move(b, point.x, point.y);
+    for (const type of ["mousePressed", "mouseReleased"])
+      await b.command("Input.dispatchMouseEvent", { type, ...point, button: "right", clickCount: 1 });
+    await b.wait(() => document.querySelector("#context-menu").matches(":popover-open"));
+    assert.deepEqual(await b.evaluate(() => [...document.querySelectorAll("#context-menu button")].map((button) => button.textContent)), ["Toolbar anpinnen"]);
+    await b.evaluate(() => document.querySelector("#context-menu").hidePopover());
     assert.equal(await b.evaluate(({ left, right }) => {
       const first = document.querySelector("#editor-topbar button").getBoundingClientRect();
       const last = document.querySelector("#save-button").getBoundingClientRect();
