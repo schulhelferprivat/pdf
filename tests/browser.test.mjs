@@ -98,11 +98,15 @@ test(
       ),
       false,
     );
-    assert.equal(
-      await b.evaluate(
-        () => document.querySelector("[data-action=select-all]").textContent,
-      ),
-      "Alle",
+    assert.deepEqual(
+      await b.evaluate(() => ["select-all", "select-none"].map((action) => {
+        const button = document.querySelector(`[data-action="${action}"]`);
+        return { label: button.getAttribute("aria-label"), title: button.title, text: button.textContent.trim(), icon: !!button.querySelector(".icon") };
+      })),
+      [
+        { label: "Alle Seiten auswählen", title: "Alle Seiten auswählen", text: "", icon: true },
+        { label: "Seitenauswahl aufheben", title: "Seitenauswahl aufheben", text: "", icon: true },
+      ],
     );
     await b.evaluate(() =>
       document
@@ -785,7 +789,7 @@ test(
             themeApi: "undefined",
             header: false,
             navigationInPill: true,
-            pagesHeading: true,
+            pagesHeading: false,
             zoomSelect: false,
             zoomOverlay: true,
             fitIcons: ["fit-width", "fit-page"],
@@ -1492,7 +1496,9 @@ test(
       mobile: true,
     });
     await b.command("Emulation.setTouchEmulationEnabled", { enabled: true });
+    await b.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     await b.wait(() => document.querySelector("#page-loading").hidden &&
+      !document.querySelector("#page-stage").style.scale &&
       Math.abs(document.querySelector("#page-canvas").width - document.querySelector("#page-stage").getBoundingClientRect().width) < 2);
     const touch = await position('#form-layer [data-field="Text"]');
     await b.command("Input.dispatchTouchEvent", {

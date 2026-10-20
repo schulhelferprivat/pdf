@@ -1,7 +1,8 @@
 import { readSidebarPinned, writeSidebarPinned } from "./settings.js";
 
 export function setupSidebar(shouldReserve) {
-  const workspace = document.getElementById("workspace"),
+  const shell = document.querySelector(".app-shell"),
+    workspace = document.getElementById("workspace"),
     panel = document.getElementById("pages-panel"),
     pin = document.getElementById("sidebar-pin"),
     grip = document.getElementById("sidebar-grip"),
@@ -16,12 +17,13 @@ export function setupSidebar(shouldReserve) {
     dragging = false;
 
   function sync() {
-    const bounds = workspace.getBoundingClientRect(),
+    const bounds = shell.getBoundingClientRect(),
       rect = panel.getBoundingClientRect(),
-      inside = point && point.y >= rect.top && point.y <= rect.bottom &&
+      inside = point && point.y >= bounds.top && point.y <= bounds.bottom &&
         point.x >= bounds.left && point.x <= bounds.right &&
         (point.x <= bounds.left + 96 ||
-          (workspace.classList.contains("sidebar-visible") && point.x <= rect.right)),
+          (workspace.classList.contains("sidebar-visible") && point.y >= rect.top &&
+            point.y <= rect.bottom && point.x <= bounds.left + panel.offsetWidth)),
       reserved = pinned && shouldReserve(),
       visible = reserved || touchOpen || (!noHover.matches && inside) ||
         (keyboard && panel.contains(document.activeElement)) ||
@@ -65,7 +67,8 @@ export function setupSidebar(shouldReserve) {
     if (keyboard) pin.focus({ preventScroll: true });
     sync();
   });
-  document.addEventListener("pointermove", (event) => move(event), { passive: true });
+  for (const type of ["pointermove", "pointerover"])
+    document.addEventListener(type, (event) => move(event), { capture: true, passive: true });
   document.addEventListener("pointerdown", pointerDown, { capture: true, passive: true });
   for (const type of ["pointerup", "pointercancel", "lostpointercapture"])
     document.addEventListener(type, release, true);
@@ -92,7 +95,8 @@ export function setupSidebar(shouldReserve) {
   document.addEventListener("load", (event) => {
     const frame = event.target;
     if (!frame.matches?.(".epub-book iframe")) return;
-    frame.contentDocument?.addEventListener("pointermove", (event) => move(event, frame), { passive: true });
+    for (const type of ["pointermove", "pointerover"])
+      frame.contentDocument?.addEventListener(type, (event) => move(event, frame), { capture: true, passive: true });
     frame.contentDocument?.addEventListener("pointerdown", pointerDown, { capture: true, passive: true });
   }, true);
   document.documentElement.addEventListener("pointerleave", () => {

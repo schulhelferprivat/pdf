@@ -45,11 +45,13 @@ export function setupToolbar() {
     nearTop = next;
     sync();
   }
-  document.addEventListener("pointermove", (event) => pointerMove(event), { passive: true });
+  for (const type of ["pointermove", "pointerover"])
+    document.addEventListener(type, (event) => pointerMove(event), { capture: true, passive: true });
   document.addEventListener("load", (event) => {
     const frame = event.target;
     if (!frame.matches?.(".epub-book iframe")) return;
-    frame.contentDocument?.addEventListener("pointermove", (event) => pointerMove(event, frame), { passive: true });
+    for (const type of ["pointermove", "pointerover"])
+      frame.contentDocument?.addEventListener(type, (event) => pointerMove(event, frame), { capture: true, passive: true });
   }, true);
   document.documentElement.addEventListener("pointerleave", () => {
     nearTop = false;

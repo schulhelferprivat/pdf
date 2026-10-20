@@ -284,18 +284,15 @@
             id="pages-panel"
             aria-label="Seitenübersicht"
           >
-            <div class="panel-heading">
-              <h2>Seitenübersicht</h2>
-              <button
-                id="sidebar-pin"
-                type="button"
-                data-icon="pin"
-                class="icon-button"
-                aria-label="Sidebar lösen"
-                aria-pressed="true"
-                title="Sidebar lösen"
-              ></button>
-            </div>
+            <button
+              id="sidebar-pin"
+              type="button"
+              data-icon="pin"
+              class="icon-button"
+              aria-label="Sidebar lösen"
+              aria-pressed="true"
+              title="Sidebar lösen"
+            ></button>
             <div
               id="pages-resizer"
               class="panel-resizer"
@@ -332,10 +329,24 @@
                 aria-label="Inhaltsverzeichnis"
               ></nav>
             </details>
-            <div class="page-bulk">
-              <button data-action="select-all">Alle</button
-              ><button data-action="select-none">Keine</button
-              ><button data-action="split" data-icon="split" hidden>
+            <div class="page-bulk" role="group" aria-label="Seitenauswahl">
+              <button
+                type="button"
+                data-action="select-all"
+                data-icon="select-all"
+                class="icon-button bulk-select-button"
+                aria-label="Alle Seiten auswählen"
+                title="Alle Seiten auswählen"
+              ></button>
+              <button
+                type="button"
+                data-action="select-none"
+                data-icon="select-none"
+                class="icon-button bulk-select-button"
+                aria-label="Seitenauswahl aufheben"
+                title="Seitenauswahl aufheben"
+              ></button>
+              <button data-action="split" data-icon="split" hidden>
                 Aufteilen
               </button>
             </div>

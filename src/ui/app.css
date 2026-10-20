@@ -331,25 +331,23 @@ body.resizing-panels * {
   user-select: none !important;
   -webkit-user-select: none !important;
 }
-.panel-heading {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  height: 43px;
-  min-height: 43px;
-  padding: 0 14px;
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--border);
+#sidebar-pin {
+  position: absolute;
+  top: 4px;
+  right: 12px;
+  z-index: 3;
 }
-.panel-heading h2 {
-  margin: 0;
-  display: flex;
-  gap: 9px;
-  align-items: center;
+.pages-panel > [data-side-section="files"] > summary,
+.pages-panel > [data-side-section="files"][hidden] + [data-side-section="outline"] > summary {
+  padding-right: 52px;
 }
 .page-bulk {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  grid-template-rows: 28px 28px;
+  gap: 4px;
+  align-items: center;
+  justify-items: start;
   padding: 9px 12px;
 }
 .page-bulk button {
@@ -360,8 +358,23 @@ body.resizing-panels * {
   background: transparent;
   border: 0;
 }
+.page-bulk .bulk-select-button {
+  grid-column: 1;
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 5px;
+}
+.page-bulk [data-action="select-all"] {
+  grid-row: 1;
+}
+.page-bulk [data-action="select-none"] {
+  grid-row: 2;
+}
 .page-bulk [data-action="split"] {
-  margin-left: auto;
+  grid-row: 2;
+  grid-column: 2;
+  justify-self: end;
   gap: 4px;
   color: var(--accent);
 }

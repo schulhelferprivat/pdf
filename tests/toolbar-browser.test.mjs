@@ -258,6 +258,8 @@ test("Browser: Simulierte macOS- und Windows-Fensterbereiche bleiben stationär"
     assert.equal((await geometry(b)).top, 43);
     await click(b, "#toolbar-pin");
     await b.command("Emulation.setDeviceMetricsOverride", { width: 320, height: 960, deviceScaleFactor: 1, mobile: false });
+    await move(b, 150, 50);
+    await settled(b, true);
     assert.equal(await b.evaluate(({ right }) => {
       const rect = document.querySelector("#toolbar-pin").getBoundingClientRect();
       return rect.left >= 0 && rect.right <= innerWidth - right &&
