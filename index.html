@@ -25,364 +25,399 @@
   </head>
   <body>
     <div class="app-shell">
-      <nav
-        class="editor-topbar"
-        id="editor-topbar"
-        aria-label="PDF-Werkzeuge"
-      >
-        <button
-          data-action="toggle-pages"
-          class="icon-button"
-          data-icon="sidebar"
-          aria-controls="pages-panel"
-          aria-label="Seitenübersicht ein-/ausblenden"
-          title="Seitenübersicht ein-/ausblenden"
-        ></button>
-        <div class="open-group" id="open-group">
-          <button
-            data-action="open"
-            data-icon="folder-open"
-            class="icon-button open-file"
-            aria-label="Datei öffnen"
-            title="Datei öffnen (Strg/⌘ O)"
-          ></button
-          ><button
-            id="recent-button"
-            data-action="toggle-recent"
-            data-icon="down"
-            class="icon-button recent-toggle"
-            aria-label="Zuletzt geöffnete Dateien"
-            title="Zuletzt geöffnete Dateien"
-            aria-haspopup="menu"
-            aria-expanded="false"
-            aria-controls="recent-menu"
-            hidden
-          ></button>
-          <div
-            id="recent-menu"
-            class="recent-menu"
-            role="menu"
-            aria-label="Zuletzt geöffnete Dateien"
-            hidden
-          ></div>
-        </div>
-        <button
-          data-action="print"
-          data-icon="print"
-          class="icon-button document-action"
-          aria-label="Drucken"
-          title="Drucken"
-        ></button>
-        <button
-          data-action="open-layout"
-          data-icon="layout"
-          class="icon-button document-action"
-          aria-label="Drucklayout erstellen"
-          title="Drucklayout erstellen"
-        ></button>
-        <button
-          data-action="export"
-          data-icon="download"
-          class="icon-button document-action"
-          aria-label="Exportieren"
-          title="Exportieren (Strg/⌘ Umschalt S)"
-        ></button>
-        <button
-          id="search-button"
-          data-action="toggle-search"
-          class="icon-button document-action"
-          data-icon="search"
-          aria-label="Suchen"
-          title="Suchen (Strg/⌘ F)"
-          aria-controls="search-bar"
-          aria-expanded="false"
-        ></button>
-        <div class="editor-controls">
-          <span class="toolbar-divider" aria-hidden="true"></span>
-          <div
-            class="tool-buttons"
-            role="group"
-            aria-label="Bearbeitungswerkzeug"
-          >
+      <div class="toolbar-frame">
+        <nav
+          class="editor-topbar"
+          id="editor-topbar"
+          aria-label="PDF-Werkzeuge"
+        >
+          <div class="open-group" id="open-group">
             <button
-              data-tool="select"
-              data-icon="cursor"
-              class="icon-button document-action active"
-              aria-label="Auswahl"
-              title="Auswahl"
-              aria-pressed="true"
-            ></button>
-            <span class="tool-split"
-              ><button
-                data-tool="text"
-                data-icon="text"
-                class="icon-button document-action"
-                aria-label="Text"
-                title="Text"
-                aria-pressed="false"
-              ></button
-              ><button
-                data-action="toggle-tool-style"
-                data-style-tool="text"
-                data-icon="down"
-                class="icon-button document-action tool-style-toggle"
-                aria-label="Text-Optionen"
-                title="Text-Optionen"
-                aria-haspopup="dialog"
-                aria-expanded="false"
-                aria-controls="tool-style-menu"
-              ></button
-            ></span>
-            <span class="tool-split"
-              ><button
-                data-tool="highlight"
-                data-icon="highlighter"
-                class="icon-button document-action"
-                aria-label="Textmarker"
-                title="Textmarker"
-                aria-pressed="false"
-              ></button
-              ><button
-                data-action="toggle-tool-style"
-                data-style-tool="highlight"
-                data-icon="down"
-                class="icon-button document-action tool-style-toggle"
-                aria-label="Textmarker-Optionen"
-                title="Textmarker-Optionen"
-                aria-haspopup="dialog"
-                aria-expanded="false"
-                aria-controls="tool-style-menu"
-              ></button
-            ></span>
-            <span class="tool-split"
-              ><button
-                data-tool="draw"
-                data-icon="pen"
-                class="icon-button document-action"
-                aria-label="Zeichnen"
-                title="Zeichnen"
-                aria-pressed="false"
-              ></button
-              ><button
-                data-action="toggle-tool-style"
-                data-style-tool="draw"
-                data-icon="down"
-                class="icon-button document-action tool-style-toggle"
-                aria-label="Stift-Optionen"
-                title="Stift-Optionen"
-                aria-haspopup="dialog"
-                aria-expanded="false"
-                aria-controls="tool-style-menu"
-              ></button
-            ></span>
-            <button
-              data-tool="erase"
-              data-icon="eraser"
-              class="icon-button document-action"
-              aria-label="Radierer"
-              title="Radierer"
-              aria-pressed="false"
-            ></button>
-            <span class="tool-split"
-              ><button
-                data-tool="comment"
-                data-icon="message"
-                class="icon-button document-action comments-toggle"
-                aria-label="Kommentar"
-                title="Kommentar setzen"
-                aria-pressed="false"
-                aria-controls="comments-panel"
-              >
-                <span class="comments-badge" id="comments-badge" hidden></span></button
-              ><button
-                data-action="toggle-tool-style"
-                data-style-tool="comment"
-                data-icon="down"
-                class="icon-button document-action tool-style-toggle"
-                aria-label="Kommentar-Optionen"
-                title="Kommentar-Optionen"
-                aria-haspopup="dialog"
-                aria-expanded="false"
-                aria-controls="tool-style-menu"
-              ></button
-            ></span>
-          </div>
-          <span class="toolbar-divider" aria-hidden="true"></span>
-          <button
-            data-action="rotate-page"
-            class="icon-button document-action"
-            data-icon="rotate-right"
-            aria-label="Seite drehen"
-            title="Seite drehen (90° nach rechts)"
-            disabled
-          ></button>
-          <span class="toolbar-divider" aria-hidden="true"></span>
-          <div
-            class="history-group"
-            role="group"
-            aria-label="Verlauf"
-          >
-            <button
-              id="undo-button"
-              data-action="undo"
-              class="icon-button"
-              data-icon="undo"
-              aria-label="Rückgängig"
-              title="Rückgängig (Strg/⌘ Z)"
-              disabled
-            ></button>
-            <button
-              id="redo-button"
-              data-action="redo"
-              class="icon-button"
-              data-icon="redo"
-              aria-label="Wiederholen"
-              title="Wiederholen (Strg/⌘ Umschalt Z)"
-              disabled
-            ></button>
-            <button
-              id="history-button"
-              data-action="toggle-history"
+              data-action="open"
+              data-icon="folder-open"
+              class="icon-button open-file"
+              aria-label="Datei öffnen"
+              title="Datei öffnen (Strg/⌘ O)"
+            ></button
+            ><button
+              id="recent-button"
+              data-action="toggle-recent"
               data-icon="down"
-              class="icon-button history-toggle"
-              aria-label="Verlauf"
-              title="Verlauf"
+              class="icon-button recent-toggle"
+              aria-label="Zuletzt geöffnete Dateien"
+              title="Zuletzt geöffnete Dateien"
               aria-haspopup="menu"
               aria-expanded="false"
-              aria-controls="history-menu"
+              aria-controls="recent-menu"
+              hidden
+            ></button>
+            <div
+              id="recent-menu"
+              class="recent-menu"
+              role="menu"
+              aria-label="Zuletzt geöffnete Dateien"
+              hidden
+            ></div>
+          </div>
+          <div class="editor-controls">
+            <button
+              data-action="print"
+              data-icon="print"
+              class="icon-button document-action"
+              aria-label="Drucken"
+              title="Drucken"
+            ></button>
+            <button
+              data-action="open-layout"
+              data-icon="layout"
+              class="icon-button document-action"
+              aria-label="Drucklayout erstellen"
+              title="Drucklayout erstellen"
+            ></button>
+            <button
+              data-action="export"
+              data-icon="download"
+              class="icon-button document-action"
+              aria-label="Exportieren"
+              title="Exportieren (Strg/⌘ Umschalt S)"
+            ></button>
+            <button
+              id="search-button"
+              data-action="toggle-search"
+              class="icon-button document-action"
+              data-icon="search"
+              aria-label="Suchen"
+              title="Suchen (Strg/⌘ F)"
+              aria-controls="search-bar"
+              aria-expanded="false"
+            ></button>
+            <span class="toolbar-divider" aria-hidden="true"></span>
+            <div
+              class="tool-buttons"
+              role="group"
+              aria-label="Bearbeitungswerkzeug"
+            >
+              <button
+                data-tool="select"
+                data-icon="cursor"
+                class="icon-button document-action active"
+                aria-label="Auswahl"
+                title="Auswahl"
+                aria-pressed="true"
+              ></button>
+              <span class="tool-split"
+                ><button
+                  data-tool="text"
+                  data-icon="text"
+                  class="icon-button document-action"
+                  aria-label="Text"
+                  title="Text"
+                  aria-pressed="false"
+                ></button
+                ><button
+                  data-action="toggle-tool-style"
+                  data-style-tool="text"
+                  data-icon="down"
+                  class="icon-button document-action tool-style-toggle"
+                  aria-label="Text-Optionen"
+                  title="Text-Optionen"
+                  aria-haspopup="dialog"
+                  aria-expanded="false"
+                  aria-controls="tool-style-menu"
+                ></button
+              ></span>
+              <span class="tool-split"
+                ><button
+                  data-tool="highlight"
+                  data-icon="highlighter"
+                  class="icon-button document-action"
+                  aria-label="Textmarker"
+                  title="Textmarker"
+                  aria-pressed="false"
+                ></button
+                ><button
+                  data-action="toggle-tool-style"
+                  data-style-tool="highlight"
+                  data-icon="down"
+                  class="icon-button document-action tool-style-toggle"
+                  aria-label="Textmarker-Optionen"
+                  title="Textmarker-Optionen"
+                  aria-haspopup="dialog"
+                  aria-expanded="false"
+                  aria-controls="tool-style-menu"
+                ></button
+              ></span>
+              <span class="tool-split"
+                ><button
+                  data-tool="draw"
+                  data-icon="pen"
+                  class="icon-button document-action"
+                  aria-label="Zeichnen"
+                  title="Zeichnen"
+                  aria-pressed="false"
+                ></button
+                ><button
+                  data-action="toggle-tool-style"
+                  data-style-tool="draw"
+                  data-icon="down"
+                  class="icon-button document-action tool-style-toggle"
+                  aria-label="Stift-Optionen"
+                  title="Stift-Optionen"
+                  aria-haspopup="dialog"
+                  aria-expanded="false"
+                  aria-controls="tool-style-menu"
+                ></button
+              ></span>
+              <button
+                data-tool="erase"
+                data-icon="eraser"
+                class="icon-button document-action"
+                aria-label="Radierer"
+                title="Radierer"
+                aria-pressed="false"
+              ></button>
+              <span class="tool-split"
+                ><button
+                  data-tool="comment"
+                  data-icon="message"
+                  class="icon-button document-action comments-toggle"
+                  aria-label="Kommentar"
+                  title="Kommentar setzen"
+                  aria-pressed="false"
+                  aria-controls="comments-panel"
+                >
+                  <span class="comments-badge" id="comments-badge" hidden></span></button
+                ><button
+                  data-action="toggle-tool-style"
+                  data-style-tool="comment"
+                  data-icon="down"
+                  class="icon-button document-action tool-style-toggle"
+                  aria-label="Kommentar-Optionen"
+                  title="Kommentar-Optionen"
+                  aria-haspopup="dialog"
+                  aria-expanded="false"
+                  aria-controls="tool-style-menu"
+                ></button
+              ></span>
+            </div>
+            <span class="toolbar-divider" aria-hidden="true"></span>
+            <button
+              data-action="rotate-page"
+              class="icon-button document-action"
+              data-icon="rotate-right"
+              aria-label="Seite drehen"
+              title="Seite drehen (90° nach rechts)"
               disabled
             ></button>
+            <span class="toolbar-divider" aria-hidden="true"></span>
+            <div
+              class="history-group"
+              role="group"
+              aria-label="Verlauf"
+            >
+              <button
+                id="undo-button"
+                data-action="undo"
+                class="icon-button"
+                data-icon="undo"
+                aria-label="Rückgängig"
+                title="Rückgängig (Strg/⌘ Z)"
+                disabled
+              ></button>
+              <button
+                id="redo-button"
+                data-action="redo"
+                class="icon-button"
+                data-icon="redo"
+                aria-label="Wiederholen"
+                title="Wiederholen (Strg/⌘ Umschalt Z)"
+                disabled
+              ></button>
+              <button
+                id="history-button"
+                data-action="toggle-history"
+                data-icon="down"
+                class="icon-button history-toggle"
+                aria-label="Verlauf"
+                title="Verlauf"
+                aria-haspopup="menu"
+                aria-expanded="false"
+                aria-controls="history-menu"
+                disabled
+              ></button>
+            </div>
+            <div class="document-title-slot">
+              <button
+                id="document-title"
+                class="document-title"
+                type="button"
+                aria-label="Dokumentname – Rechtsklick für Umbenennen"
+                hidden
+              >
+                <span class="document-title-name"></span>
+              </button>
+            </div>
           </div>
-          <div class="document-title-slot">
-            <button
-              id="document-title"
-              class="document-title"
-              type="button"
-              aria-label="Dokumentname – Rechtsklick für Umbenennen"
+          <button
+            id="save-button"
+            data-action="save"
+            data-icon="save"
+            class="icon-button document-action save-button"
+            aria-label="Speichern"
+            title="Speichern (Strg/⌘ S)"
+          ></button>
+          <button
+            id="toolbar-pin"
+            type="button"
+            data-icon="pin"
+            class="icon-button"
+            aria-label="Toolbar lösen"
+            aria-pressed="true"
+            title="Toolbar lösen"
+          ></button>
+        </nav>
+      </div>
+      <div class="workspace" id="workspace">
+        <div class="pages-frame">
+          <aside
+            class="pages-panel"
+            id="pages-panel"
+            aria-label="Seitenübersicht"
+          >
+            <div class="panel-heading">
+              <h2>Seitenübersicht</h2>
+              <button
+                id="sidebar-pin"
+                type="button"
+                data-icon="pin"
+                class="icon-button"
+                aria-label="Sidebar lösen"
+                aria-pressed="true"
+                title="Sidebar lösen"
+              ></button>
+            </div>
+            <div
+              id="pages-resizer"
+              class="panel-resizer"
+              role="separator"
+              tabindex="0"
+              aria-label="Breite der Seitenübersicht"
+              aria-orientation="vertical"
+              aria-controls="pages-panel"
+              title="Ziehen zum Verändern der Breite. Doppelklick oder Enter zum Zurücksetzen."
+            ></div>
+            <details class="side-section" data-side-section="files" hidden>
+              <summary>
+                <span class="side-section-title">Dateien</span
+                ><span class="side-section-count" id="file-count"></span
+                ><span class="side-section-chevron" data-icon="down"></span>
+              </summary>
+              <ul id="file-list" class="file-list"></ul>
+              <button
+                data-action="merge"
+                data-icon="layers"
+                class="full-width file-merge"
+              >
+                PDFs zusammenführen
+              </button>
+            </details>
+            <details class="side-section" data-side-section="outline" hidden>
+              <summary>
+                <span class="side-section-title">Inhalt</span
+                ><span class="side-section-chevron" data-icon="down"></span>
+              </summary>
+              <nav
+                id="outline-list"
+                class="outline-list"
+                aria-label="Inhaltsverzeichnis"
+              ></nav>
+            </details>
+            <div class="page-bulk">
+              <button data-action="select-all">Alle</button
+              ><button data-action="select-none">Keine</button
+              ><button data-action="split" data-icon="split" hidden>
+                Aufteilen
+              </button>
+            </div>
+            <div id="page-list" class="page-list"></div>
+            <details
+              class="side-section side-section-bottom"
+              data-side-section="annotations"
               hidden
             >
-              <span class="document-title-name"></span>
-            </button>
-          </div>
+              <summary>
+                <span class="side-section-title">Annotationen</span
+                ><span class="side-section-count" id="annotation-count"></span
+                ><span class="side-section-chevron" data-icon="down"></span>
+              </summary>
+              <div
+                class="annotation-filter"
+                role="group"
+                aria-label="Annotationen filtern"
+              >
+                <button
+                  type="button"
+                  data-annotation-filter="all"
+                  aria-pressed="true"
+                >
+                  Alle</button
+                ><button type="button" data-annotation-filter="text">Text</button
+                ><button type="button" data-annotation-filter="mark">
+                  Markierung</button
+                ><button type="button" data-annotation-filter="draw">
+                  Zeichnung</button
+                ><button type="button" data-annotation-filter="image">
+                  Bild</button
+                ><button type="button" data-annotation-filter="comment">
+                  Kommentar</button
+                ><button type="button" data-annotation-filter="link">
+                  Link
+                </button>
+                <button
+                  type="button"
+                  id="annotation-search-toggle"
+                  data-icon="search"
+                  aria-label="Annotationen durchsuchen"
+                  title="Annotationen durchsuchen"
+                  aria-expanded="false"
+                  aria-controls="annotation-search"
+                ></button>
+              </div>
+              <input
+                type="search"
+                id="annotation-search"
+                class="annotation-search"
+                placeholder="Text suchen"
+                aria-label="Annotationen durchsuchen"
+                hidden
+              />
+              <div id="annotation-bulk" class="annotation-bulk" hidden>
+                <span id="annotation-selection-count" role="status"></span>
+                <button
+                  type="button"
+                  id="annotation-delete-selection"
+                  class="icon-button"
+                  data-icon="trash"
+                  aria-label="Auswahl löschen"
+                  title="Auswahl löschen (Entf)"
+                ></button>
+              </div>
+              <ul
+                id="annotation-list"
+                class="annotation-list"
+                aria-label="Annotationen"
+              ></ul>
+            </details>
+          </aside>
         </div>
         <button
-          id="save-button"
-          data-action="save"
-          data-icon="save"
-          class="icon-button document-action save-button"
-          aria-label="Speichern"
-          title="Speichern (Strg/⌘ S)"
+          id="sidebar-grip"
+          type="button"
+          aria-label="Seitenübersicht öffnen"
+          aria-controls="pages-panel"
+          aria-expanded="false"
+          hidden
         ></button>
-      </nav>
-      <div class="workspace pages-hidden" id="workspace">
-        <aside
-          class="pages-panel"
-          id="pages-panel"
-          aria-label="Seitenübersicht"
-        >
-          <details class="side-section" data-side-section="files" hidden>
-            <summary>
-              <span class="side-section-title">Dateien</span
-              ><span class="side-section-count" id="file-count"></span
-              ><span class="side-section-chevron" data-icon="down"></span>
-            </summary>
-            <ul id="file-list" class="file-list"></ul>
-            <button
-              data-action="merge"
-              data-icon="layers"
-              class="full-width file-merge"
-            >
-              PDFs zusammenführen
-            </button>
-          </details>
-          <details class="side-section" data-side-section="outline" hidden>
-            <summary>
-              <span class="side-section-title">Inhalt</span
-              ><span class="side-section-chevron" data-icon="down"></span>
-            </summary>
-            <nav
-              id="outline-list"
-              class="outline-list"
-              aria-label="Inhaltsverzeichnis"
-            ></nav>
-          </details>
-          <div class="page-bulk">
-            <button data-action="select-all">Alle</button
-            ><button data-action="select-none">Keine</button
-            ><button data-action="split" data-icon="split" hidden>
-              Aufteilen
-            </button>
-          </div>
-          <div id="page-list" class="page-list"></div>
-          <details
-            class="side-section side-section-bottom"
-            data-side-section="annotations"
-            hidden
-          >
-            <summary>
-              <span class="side-section-title">Annotationen</span
-              ><span class="side-section-count" id="annotation-count"></span
-              ><span class="side-section-chevron" data-icon="down"></span>
-            </summary>
-            <div
-              class="annotation-filter"
-              role="group"
-              aria-label="Annotationen filtern"
-            >
-              <button
-                type="button"
-                data-annotation-filter="all"
-                aria-pressed="true"
-              >
-                Alle</button
-              ><button type="button" data-annotation-filter="text">Text</button
-              ><button type="button" data-annotation-filter="mark">
-                Markierung</button
-              ><button type="button" data-annotation-filter="draw">
-                Zeichnung</button
-              ><button type="button" data-annotation-filter="image">
-                Bild</button
-              ><button type="button" data-annotation-filter="comment">
-                Kommentar</button
-              ><button type="button" data-annotation-filter="link">
-                Link
-              </button>
-              <button
-                type="button"
-                id="annotation-search-toggle"
-                data-icon="search"
-                aria-label="Annotationen durchsuchen"
-                title="Annotationen durchsuchen"
-                aria-expanded="false"
-                aria-controls="annotation-search"
-              ></button>
-            </div>
-            <input
-              type="search"
-              id="annotation-search"
-              class="annotation-search"
-              placeholder="Text suchen"
-              aria-label="Annotationen durchsuchen"
-              hidden
-            />
-            <div id="annotation-bulk" class="annotation-bulk" hidden>
-              <span id="annotation-selection-count" role="status"></span>
-              <button
-                type="button"
-                id="annotation-delete-selection"
-                class="icon-button"
-                data-icon="trash"
-                aria-label="Auswahl löschen"
-                title="Auswahl löschen (Entf)"
-              ></button>
-            </div>
-            <ul
-              id="annotation-list"
-              class="annotation-list"
-              aria-label="Annotationen"
-            ></ul>
-          </details>
-        </aside>
         <main class="editor" id="editor" aria-label="PDF-Bearbeitungsfläche">
           <div
             class="search-bar"
@@ -592,6 +627,16 @@
           aria-label="Kommentare"
           hidden
         >
+          <div
+            id="comments-resizer"
+            class="panel-resizer"
+            role="separator"
+            tabindex="0"
+            aria-label="Breite der Kommentarleiste"
+            aria-orientation="vertical"
+            aria-controls="comments-panel"
+            title="Ziehen zum Verändern der Breite. Doppelklick oder Enter zum Zurücksetzen."
+          ></div>
           <div class="comments-heading">
             <h2>Kommentare</h2>
             <span class="side-section-count" id="comments-count"></span>
@@ -1060,6 +1105,10 @@
           Internet. Nur die App selbst wird zwischengespeichert. Dateien und
           Änderungen bleiben im Arbeitsspeicher und gehen beim Neuladen
           verloren. Download-Dateien werden nur auf deinen Wunsch erstellt.
+          Die Pin-Einstellungen der Toolbar und der linken Sidebar werden lokal
+          auf diesem Gerät gespeichert. Ohne gespeicherte Einstellung sind beide
+          Pins aktiv. Gelöst erscheinen die Leisten bei Mausnähe am jeweiligen
+          Rand. Auf Touchgeräten öffnet der Griff am linken Rand die Sidebar.
         </p>
         <p>
           Grenzen: 100 MiB pro PDF, 150 MiB pro Zusammenführung, 500 Seiten pro

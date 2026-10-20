@@ -1,4 +1,5 @@
 const paths = {
+  pin: "M16 3h-8 M9 3v7l-3 4v2h12v-2l-3-4V3 M12 16v6",
   "fit-width":
     "M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z M8.5 12h7 M10.5 10l-2 2 2 2 M13.5 10l2 2-2 2",
   "fit-page":

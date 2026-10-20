@@ -2,6 +2,7 @@ import { readBytes } from "../core/files.js";
 import { pdfJs, renderOptions } from "./vendors.js";
 import { displayedSize, normalizeAngle } from "../core/model.js";
 import { fitSize, displayPoint, displayRect } from "../core/geometry.js";
+import { generateOutline } from "./outline.js";
 export class Renderer {
   constructor(sources, assets) {
     this.sources = sources;
@@ -331,22 +332,29 @@ export class Renderer {
       this.outlines.set(
         sourceId,
         (async () => {
-          const pdf = await this.source(sourceId);
-          const build = async (items) => {
-            const entries = [];
-            for (const item of items || []) {
-              const children = await build(item.items);
-              const entry = { title: item.title?.trim() || "Ohne Titel" };
-              if (item.url) entry.url = item.url;
-              else if (item.dest)
-                entry.index = await this.destinationIndex(pdf, item.dest);
-              entry.items = children;
-              entry.open = item.count > 0;
-              entries.push(entry);
-            }
-            return entries;
-          };
-          return build(await pdf.getOutline());
+          this.uses.set(sourceId, (this.uses.get(sourceId) || 0) + 1);
+          try {
+            const pdf = await this.source(sourceId);
+            const build = async (items) => {
+              const entries = [];
+              for (const item of items || []) {
+                const children = await build(item.items);
+                const entry = { title: item.title?.trim() || "Ohne Titel" };
+                if (item.url) entry.url = item.url;
+                else if (item.dest)
+                  entry.index = await this.destinationIndex(pdf, item.dest);
+                entry.items = children;
+                entry.open = item.count > 0;
+                entries.push(entry);
+              }
+              return entries;
+            };
+            const outline = await pdf.getOutline();
+            return await (outline?.length ? build(outline) : generateOutline(pdf));
+          } finally {
+            this.uses.set(sourceId, Math.max(0, (this.uses.get(sourceId) || 1) - 1));
+            this.trim();
+          }
         })().catch(() => []),
       );
     return this.outlines.get(sourceId);

@@ -52,6 +52,9 @@ import { layoutPlan } from "./pdf/layout.js";
 import { icon, installIcons, cursorIcon } from "./ui/icons.js";
 import { setupPwa } from "./pwa/app.js";
 import { setHidden, setupDisclosures, fadeContent, cancelContentFade, holdEntrance } from "./ui/motion.js";
+import { setupPanelResizing } from "./ui/panels.js";
+import { setupToolbar } from "./ui/toolbar.js";
+import { setupSidebar } from "./ui/sidebar.js";
 const $ = (id) => document.getElementById(id);
 const sources = new Map(),
   assets = new Map();
@@ -83,6 +86,10 @@ const element = () =>
   current()?.elements.find((el) => el.id === selectedElement);
 installIcons();
 setupDisclosures();
+const syncSidebar = setupSidebar(() => documents.length > 0 &&
+  !(documents.length === 1 && documents[0].kind === "pdf" && documents[0].pages.length <= 1));
+setupPanelResizing();
+setupToolbar();
 function message(text, error = false) {
   const toast = $("toast");
   clearTimeout(toastTimer);
@@ -164,8 +171,7 @@ function modify(label, operation) {
   edit(doc, label, operation);
   changed();
 }
-let pagesAutoHidden = false,
-  enteringDocument = null,
+let enteringDocument = null,
   entrance = null;
 const entranceDelay = 400;
 function startEntrance(doc) {
@@ -190,44 +196,10 @@ function dropEntrance() {
   cancelContentFade($("page-flow"));
   entrance = null;
 }
-function withoutPanelMotion(change) {
-  const workspace = $("workspace");
-  if (workspace.classList.contains("instant")) return change();
-  workspace.classList.add("instant");
-  try {
-    return change();
-  } finally {
-    void $("pages-panel").offsetWidth;
-    workspace.classList.remove("instant");
-  }
-}
-function fitPagesPanel() {
-  withoutPanelMotion(() => {
-    const workspace = $("workspace"),
-      collapse =
-        !documents.length ||
-        (documents.length === 1 && documents[0].kind === "pdf" && documents[0].pages.length <= 1);
-    if (collapse) {
-      pagesAutoHidden ||= !workspace.classList.contains("pages-hidden");
-      workspace.classList.add("pages-hidden");
-      workspace.classList.remove("pages-open");
-    } else if (pagesAutoHidden) {
-      pagesAutoHidden = false;
-      workspace.classList.remove("pages-hidden");
-    }
-  });
-  syncPanelToggles();
-}
 function addDocument(doc) {
   enteringDocument = doc.id;
-  withoutPanelMotion(() => {
-    if (!documents.length) {
-      $("workspace").classList.remove("pages-hidden");
-      pagesAutoHidden = false;
-    }
-    documents.push(doc);
-    fitPagesPanel();
-  });
+  documents.push(doc);
+  syncSidebar();
   activate(doc);
 }
 function revealSection(name, visible, open = true) {
@@ -533,7 +505,7 @@ function deleteAnnotations(ids = [...annotationSelection]) {
     const remaining = $("annotation-list").querySelectorAll(".annotation-entry");
     (
       remaining[Math.min(Math.max(0, index), remaining.length - 1)] ||
-      document.querySelector('[data-action="toggle-pages"]')
+      $("sidebar-pin")
     )?.focus();
   }
 }
@@ -1107,7 +1079,7 @@ async function closeDocument(doc) {
   const animate = doc.id === activeId;
   if (animate) activeId = documents.at(-1)?.id ?? null;
   selectedElement = null;
-  fitPagesPanel();
+  syncSidebar();
   renderAll({ animate });
   collectResources();
 }
@@ -2480,6 +2452,7 @@ function layoutOptions() {
   };
 }
 let outlineGeneration = 0;
+let outlineDocumentId = null;
 function safeUrl(value) {
   try {
     const url = new URL(value);
@@ -2546,6 +2519,11 @@ function outlineEntry(doc, sourceId, entry, depth) {
 async function renderOutline() {
   const generation = ++outlineGeneration,
     doc = active();
+  if (outlineDocumentId !== (doc?.id ?? null)) {
+    outlineDocumentId = doc?.id ?? null;
+    $("outline-list").replaceChildren();
+    revealSection("outline", false);
+  }
   if (doc?.kind === "epub") {
     const list = $("outline-list");
     list.replaceChildren();
@@ -2628,7 +2606,7 @@ function renderAll({ animate = false } = {}) {
   renderThumbnails();
   void renderPage({ animate });
   renderSettings();
-  syncPanelToggles();
+  syncSidebar();
   if (!current()) closeSearch();
   else if (searchOpen())
     void runSearch({ fresh: search.documentId !== activeId });
@@ -3187,9 +3165,11 @@ function toggleHistory() {
 }
 function placeMenu(menu, anchorElement) {
   const anchor = anchorElement.getBoundingClientRect(),
-    rect = menu.getBoundingClientRect();
+    rect = menu.getBoundingClientRect(),
+    toolbar = anchorElement.closest("#editor-topbar"),
+    offset = toolbar ? toolbar.parentElement.getBoundingClientRect().top - toolbar.getBoundingClientRect().top : 0;
   menu.style.left = `${Math.max(4, Math.min(anchor.left, innerWidth - rect.width - 4))}px`;
-  menu.style.top = `${Math.max(4, Math.min(anchor.bottom + 6, innerHeight - rect.height - 4))}px`;
+  menu.style.top = `${Math.max(4, Math.min(anchor.bottom + offset + 6, innerHeight - rect.height - 4))}px`;
 }
 document.addEventListener("pointerdown", (event) => {
   if (!event.target.closest("#history-menu, #history-button")) closeHistory();
@@ -4239,7 +4219,34 @@ $("page-list").addEventListener("dragstart", (event) => {
   const item = event.target.closest(".page-item"),
     doc = active();
   if (!item || !doc) return;
-  const rect = item.querySelector(".thumbnail").getBoundingClientRect();
+  endPageDrag();
+  const thumbnail = item.querySelector(".thumbnail"),
+    rect = thumbnail.getBoundingClientRect(),
+    preview = document.createElement("div"),
+    image = document.createElement("canvas"),
+    source = thumbnail.querySelector("canvas");
+  preview.className = "page-drag-preview";
+  preview.hidden = true;
+  preview.inert = true;
+  preview.setAttribute("aria-hidden", "true");
+  preview.style.width = `${rect.width}px`;
+  preview.style.height = `${rect.height}px`;
+  preview.style.borderColor = getComputedStyle(thumbnail).borderColor;
+  if (source?.width && source.height) {
+    const canvas = document.createElement("canvas");
+    canvas.width = source.width;
+    canvas.height = source.height;
+    canvas.getContext("2d").drawImage(source, 0, 0);
+    preview.append(canvas);
+  } else {
+    const placeholder = thumbnail.querySelector(".thumb-placeholder");
+    if (placeholder) preview.append(placeholder.cloneNode(true));
+  }
+  image.className = "page-drag-image";
+  image.width = image.height = 1;
+  image.inert = true;
+  image.setAttribute("aria-hidden", "true");
+  document.body.append(preview, image);
   pageDrag = {
     page: item.dataset.page,
     ids: draggedIds(doc, item.dataset.page),
@@ -4248,9 +4255,13 @@ $("page-list").addEventListener("dragstart", (event) => {
     previous: null,
     sweep: 0,
     mode: "turn",
+    preview,
+    image,
+    offset: { x: event.clientX - rect.left, y: event.clientY - rect.top },
   };
   event.dataTransfer.setData("application/x-pdfhelper-page", pageDrag.page);
   event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setDragImage(image, 0, 0);
 });
 function clearDropIndicators() {
   document
@@ -4270,7 +4281,7 @@ function draggedIds(doc, dragged) {
 const pageItem = (id) =>
   $("page-list").querySelector(`.page-item[data-page="${id}"]`);
 const turnPreviewThreshold = 30;
-function previewTurn() {
+function previewPageDrag() {
   const sweep =
       pageDrag.mode === "move" ||
       Math.abs(pageDrag.sweep) < turnPreviewThreshold
@@ -4286,11 +4297,17 @@ function previewTurn() {
     item.classList.toggle("turning", sweep !== 0);
     item.classList.toggle("drop-rotate", snapped);
   }
+  const { preview, previous, offset } = pageDrag;
+  preview.hidden = pageDrag.mode !== "move";
+  if (previous)
+    preview.style.transform = `translate(${previous.x - offset.x}px, ${previous.y - offset.y}px)`;
 }
 function endPageDrag() {
   if (!pageDrag) return;
   pageDrag.sweep = 0;
-  previewTurn();
+  previewPageDrag();
+  pageDrag.preview.remove();
+  pageDrag.image.remove();
   pageDrag = null;
   clearDropIndicators();
 }
@@ -4333,7 +4350,7 @@ document.addEventListener(
     if (pageDrag.mode === "turn" && pageDrag.previous)
       pageDrag.sweep += sweepStep(center, pageDrag.previous, point);
     pageDrag.previous = point;
-    previewTurn();
+    previewPageDrag();
   },
   true,
 );
@@ -4949,22 +4966,6 @@ async function printDocument() {
     });
   });
 }
-function syncPanelToggles() {
-  const workspace = $("workspace");
-  const pagesVisible =
-    !workspace.classList.contains("pages-hidden") &&
-    (innerWidth > 600 || workspace.classList.contains("pages-open"));
-  const panel = $("pages-panel");
-  if (!pagesVisible && panel.contains(document.activeElement))
-    document.querySelector('[data-action="toggle-pages"]').focus();
-  panel.inert = !pagesVisible;
-  document
-    .querySelectorAll('[data-action="toggle-pages"]')
-    .forEach((button) => {
-      button.setAttribute("aria-expanded", String(pagesVisible));
-    });
-}
-window.addEventListener("resize", syncPanelToggles);
 const actions = {
   "toggle-comments": () => showComments(),
   open: openFiles,
@@ -4982,14 +4983,6 @@ const actions = {
   redo: () => stepHistory(redo),
   "toggle-history": toggleHistory,
   "toggle-tool-style": toggleToolStyle,
-  "toggle-pages": () => {
-    pagesAutoHidden = false;
-    if (innerWidth <= 600) {
-      $("workspace").classList.remove("pages-hidden");
-      $("workspace").classList.toggle("pages-open");
-    } else $("workspace").classList.toggle("pages-hidden");
-    syncPanelToggles();
-  },
   "select-all": () => {
     if (active()) {
       active().selected = active().pages.map((page) => page.id);

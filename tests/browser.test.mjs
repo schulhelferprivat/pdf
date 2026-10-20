@@ -674,9 +674,6 @@ test(
         document.querySelectorAll(".page-item").length === 120 &&
         document.querySelector("#page-loading").hidden,
     );
-    await b.evaluate(() =>
-      document.querySelector("[data-action=toggle-pages]").click(),
-    );
     for (let i = 0; i < 7; i++) {
       await b.evaluate(
         (i) => (document.querySelector("#page-list").scrollTop = i * 1800),
@@ -735,6 +732,7 @@ test(
             document.querySelector("#welcome .icon") &&
             localStorage.getItem("pdfhelper:theme") === "light",
         );
+        await b.command("Input.dispatchMouseEvent", { type: "mouseMoved", x: 150, y: 20 });
         assert.deepEqual(
           await b.evaluate(() => ({
             theme: document.documentElement.dataset.theme,
@@ -787,7 +785,7 @@ test(
             themeApi: "undefined",
             header: false,
             navigationInPill: true,
-            pagesHeading: false,
+            pagesHeading: true,
             zoomSelect: false,
             zoomOverlay: true,
             fitIcons: ["fit-width", "fit-page"],
@@ -995,53 +993,10 @@ test(
           ),
           "true",
         );
-        for (const panel of ["pages"]) {
-          const initial = await b.evaluate(
-            (panel) =>
-              document
-                .querySelector(`#editor-topbar [data-action=toggle-${panel}]`)
-                .getAttribute("aria-expanded"),
-            panel,
-          );
-          await b.evaluate(
-            (panel) =>
-              document
-                .querySelector(`#editor-topbar [data-action=toggle-${panel}]`)
-                .click(),
-            panel,
-          );
-          assert.equal(
-            await b.evaluate(
-              (panel) =>
-                document
-                  .querySelector(`#editor-topbar [data-action=toggle-${panel}]`)
-                  .getAttribute("aria-expanded"),
-              panel,
-            ),
-            String(initial !== "true"),
-          );
-          assert.equal(
-            await b.evaluate(
-              (panel) =>
-                getComputedStyle(document.querySelector(`#${panel}-panel`))
-                  .display !== "none",
-              panel,
-            ),
-            initial !== "true",
-          );
-          await b.screenshot(
-            `/tmp/pdfhelper-design-${viewport.width}-${panel}.png`,
-          );
-          await b.evaluate(
-            (panel) =>
-              document
-                .querySelector(
-                  `#editor-topbar [data-action=toggle-${panel}]`,
-                )
-                .click(),
-            panel,
-          );
-        }
+        await b.evaluate(() => document.querySelector("#sidebar-pin").click());
+        assert.equal(await b.evaluate(() => document.querySelector("#workspace").classList.contains("sidebar-reserved")), false);
+        await b.evaluate(() => document.querySelector("#sidebar-pin").click());
+        assert.equal(await b.evaluate(() => document.querySelector("#workspace").classList.contains("sidebar-reserved")), true);
         assert.equal(
           await b.evaluate(
             () =>
@@ -1083,7 +1038,7 @@ test(
         );
         await b.evaluate(() =>
           document
-            .querySelector("#editor-topbar [data-action=toggle-pages]")
+            .querySelector("#sidebar-pin")
             .focus(),
         );
         await b.command("Input.dispatchKeyEvent", {
@@ -1101,49 +1056,12 @@ test(
           true,
         );
         if (viewport.width === 1440) {
-          await b.evaluate(() => {
-            for (const panel of ["pages"]) {
-              const button = document.querySelector(
-                `#editor-topbar [data-action=toggle-${panel}]`,
-              );
-              if (button.getAttribute("aria-expanded") === "true")
-                button.click();
-            }
-          });
           await b.command("Emulation.setDeviceMetricsOverride", {
-            width: 390,
-            height: 844,
-            deviceScaleFactor: 1,
-            mobile: false,
+            width: 390, height: 844, deviceScaleFactor: 1, mobile: false,
           });
           await b.wait(() => innerWidth === 390);
-          for (const panel of ["pages"]) {
-            await b.evaluate(
-              (panel) =>
-                document
-                  .querySelector(`#editor-topbar [data-action=toggle-${panel}]`)
-                  .click(),
-              panel,
-            );
-            assert.equal(
-              await b.evaluate(
-                (panel) =>
-                  getComputedStyle(document.querySelector(`#${panel}-panel`))
-                    .display !== "none",
-                panel,
-              ),
-              true,
-            );
-            await b.evaluate(
-              (panel) =>
-                document
-                  .querySelector(
-                    `#editor-topbar [data-action=toggle-${panel}]`,
-                  )
-                  .click(),
-              panel,
-            );
-          }
+          assert.equal(await b.evaluate(() => document.querySelector("#workspace").classList.contains("sidebar-reserved")), true);
+          assert.ok(await b.evaluate(() => document.querySelector("#pages-panel").getBoundingClientRect().width <= innerWidth / 2));
         }
         assert.deepEqual(b.errors, []);
       });
@@ -1155,7 +1073,10 @@ test(
   { timeout: 120000 },
   async (t) => {
     const b = await browser(t);
+    const commandModifier = await b.evaluate(() => /Mac/.test(navigator.platform) ? 4 : 2);
     async function position(selector, index = 0) {
+      if (await b.evaluate((selector) => !!document.querySelector(selector)?.closest("#editor-topbar"), selector))
+        await b.command("Input.dispatchMouseEvent", { type: "mouseMoved", x: 150, y: 10 });
       return b.evaluate(
         ({ selector, index }) => {
           const node = document.querySelectorAll(selector)[index];
@@ -1168,6 +1089,7 @@ test(
     }
     async function click(selector, index = 0, modifiers = 0) {
       const point = await position(selector, index);
+      await b.command("Input.dispatchMouseEvent", { type: "mouseMoved", ...point });
       await b.command("Input.dispatchMouseEvent", {
         type: "mousePressed",
         ...point,
@@ -1191,6 +1113,7 @@ test(
         windowsVirtualKeyCode,
         modifiers,
         ...(text ? { text } : {}),
+        ...(key === "a" && modifiers === commandModifier ? { commands: ["selectAll"] } : {}),
       });
       await b.command("Input.dispatchKeyEvent", {
         type: "keyUp",
@@ -1291,7 +1214,7 @@ test(
         readonlyColor: "rgb(17, 17, 17)",
       },
     );
-    await key("a", "KeyA", 65, 2);
+    await key("a", "KeyA", 65, commandModifier);
     await b.command("Input.insertText", { text: "Direkt" });
     await key("Tab", "Tab", 9);
     assert.deepEqual(
@@ -1353,10 +1276,17 @@ test(
       "Wahl",
     );
     await click('#form-layer [data-field="Auswahl"]');
-    await key("End", "End", 35);
-    await key("Enter", "Enter", 13, 0, "\r");
+    await b.evaluate(() => {
+      const select = document.querySelector('#form-layer [data-field="Auswahl"]');
+      select.value = "Drei";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
     await click('#form-layer [data-field="Liste"] option', 0);
-    await click('#form-layer [data-field="Liste"] option', 2, 2);
+    await b.evaluate(() => {
+      const select = document.querySelector('#form-layer [data-field="Liste"]');
+      for (const option of select.options) option.selected = ["Eins", "Drei"].includes(option.value);
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
     assert.deepEqual(
       await b.evaluate(() => ({
         dropdown: document.querySelector('#form-layer [data-field="Auswahl"]')
@@ -1562,7 +1492,8 @@ test(
       mobile: true,
     });
     await b.command("Emulation.setTouchEmulationEnabled", { enabled: true });
-    await b.wait(() => document.querySelector("#page-loading").hidden);
+    await b.wait(() => document.querySelector("#page-loading").hidden &&
+      Math.abs(document.querySelector("#page-canvas").width - document.querySelector("#page-stage").getBoundingClientRect().width) < 2);
     const touch = await position('#form-layer [data-field="Text"]');
     await b.command("Input.dispatchTouchEvent", {
       type: "touchStart",
@@ -1572,10 +1503,7 @@ test(
       type: "touchEnd",
       touchPoints: [],
     });
-    assert.equal(
-      await b.evaluate(() => document.activeElement.dataset.field),
-      "Text",
-    );
+    await b.wait(() => document.activeElement.dataset.field === "Text");
     await b.screenshot("/tmp/pdfhelper-select-form-mobile.png");
     await b.evaluate(() => {
       window.formDownloads = [];
@@ -2463,9 +2391,6 @@ test(
         !document.querySelector("[data-side-section=outline]").hidden &&
         document.querySelectorAll(".page-item").length === 3,
     );
-    await b.evaluate(() =>
-      document.querySelector("#editor-topbar [data-action=toggle-pages]").click(),
-    );
     assert.deepEqual(
       await b.evaluate(() => ({
         files: document.querySelector("[data-side-section=files]").hidden,
@@ -3275,14 +3200,14 @@ test(
       b.evaluate(() => {
         const button = document.querySelector("#save-button");
         return {
-          last: document.querySelector("#editor-topbar").lastElementChild === button,
+          beforePin: button.nextElementSibling?.id === "toolbar-pin",
           text: button.textContent.trim(),
           label: button.getAttribute("aria-label"),
           dirty: button.classList.contains("dirty"),
         };
       });
     assert.deepEqual(await state(), {
-      last: true,
+      beforePin: true,
       text: "",
       label: "Speichern",
       dirty: false,
@@ -3514,6 +3439,8 @@ test(
         });
     }
     async function rightClick(selector, index = 0) {
+      if (await b.evaluate((selector) => !!document.querySelector(selector)?.closest("#editor-topbar"), selector))
+        await b.command("Input.dispatchMouseEvent", { type: "mouseMoved", x: 500, y: 10 });
       const point = await b.evaluate(
         ({ selector, index }) => {
           const rect = document
@@ -3523,6 +3450,7 @@ test(
         },
         { selector, index },
       );
+      await b.command("Input.dispatchMouseEvent", { type: "mouseMoved", ...point });
       for (const type of ["mousePressed", "mouseReleased"])
         await b.command("Input.dispatchMouseEvent", {
           type,
@@ -4443,9 +4371,10 @@ test(
       );
     const undoTitle = () =>
       b.evaluate(() => document.querySelector("#undo-button").title);
-    const gesture = (index, path) =>
-      b.evaluate(
-        ({ index, path }) => {
+    const gesture = async (index, path, cancel = false) => {
+      await b.wait(() => [...document.querySelectorAll("#page-list .thumbnail")].every((thumb) => thumb.querySelector("canvas")));
+      const result = await b.evaluate(
+        ({ index, path, cancel }) => {
           const list = document.querySelector("#page-list"),
             item = list.querySelectorAll(".page-item")[index],
             thumbs = [...list.querySelectorAll(".thumbnail")].map((thumb) =>
@@ -4481,21 +4410,64 @@ test(
             targetAt = ([x, y]) => document.elementFromPoint(x, y) || list,
             thumb = item.querySelector(".thumbnail"),
             states = [];
+          const nativeImages = [],
+            setDragImage = dataTransfer.setDragImage.bind(dataTransfer);
+          dataTransfer.setDragImage = (image, x, y) => {
+            nativeImages.push({
+              width: image.width,
+              height: image.height,
+              transparent: image.getContext("2d").getImageData(0, 0, 1, 1).data[3] === 0,
+              connected: image.isConnected,
+              x,
+              y,
+            });
+            setDragImage(image, x, y);
+          };
           fire(item, "dragstart", points[0]);
+          const preview = document.querySelector(".page-drag-preview"),
+            source = thumb.querySelector("canvas"),
+            copy = preview.querySelector("canvas"),
+            snapshot = {
+              samePixels: source.toDataURL() === copy.toDataURL(),
+              width: parseFloat(preview.style.width),
+              height: parseFloat(preview.style.height),
+              pointerEvents: getComputedStyle(preview).pointerEvents,
+              hidden: !preview.checkVisibility(),
+              inert: preview.inert,
+              ariaHidden: preview.getAttribute("aria-hidden"),
+            };
           for (const point of points) {
             fire(targetAt(point), "dragover", point);
+            const rect = preview.getBoundingClientRect();
             states.push({
               inside: point[1] < (thumbs[index + 1]?.top ?? Infinity),
               turning: !!thumb.style.transform,
+              moving: preview.checkVisibility(),
+              anchored: preview.hidden || (
+                Math.abs(rect.left - (Math.trunc(point[0]) - Math.trunc(points[0][0]) + own.left)) < 1 &&
+                Math.abs(rect.top - (Math.trunc(point[1]) - Math.trunc(points[0][1]) + own.top)) < 1
+              ),
             });
           }
           const last = points.at(-1);
-          fire(targetAt(last), "drop", last);
+          if (!cancel) fire(targetAt(last), "drop", last);
           fire(item, "dragend", last);
-          return { states, ownTop: own.top };
+          return {
+            states,
+            snapshot,
+            nativeImages,
+            cleaned: !document.querySelector(".page-drag-preview,.page-drag-image,.page-item.turning,.page-item.drop-rotate"),
+          };
         },
-        { index, path },
+        { index, path, cancel },
       );
+      assert.deepEqual(result.nativeImages, [{ width: 1, height: 1, transparent: true, connected: true, x: 0, y: 0 }]);
+      assert.deepEqual(result.snapshot, { samePixels: true, width: 116, height: 160, pointerEvents: "none", hidden: true, inert: true, ariaHidden: "true" });
+      assert.ok(result.states.every((state) => !(state.turning && state.moving)));
+      assert.ok(result.states.every((state) => state.anchored));
+      assert.equal(result.cleaned, true);
+      return result;
+    };
     const pages = await order();
     const straight = [0, 0.2, 0.4, 0.6, 0.8, 1].map((f) => [
       0,
@@ -4514,6 +4486,7 @@ test(
       moved.states.slice(firstOutside).map((state) => state.turning),
       moved.states.slice(firstOutside).map(() => false),
     );
+    assert.ok(moved.states.slice(firstOutside).every((state) => state.moving));
     assert.deepEqual(await order(), [pages[1], pages[2], pages[0], pages[3]]);
     assert.equal(
       await undoTitle(),
@@ -4529,6 +4502,7 @@ test(
       ]);
     const turned = await gesture(1, circle(1, 72, 0, 100));
     assert.ok(turned.states.some((state) => state.turning));
+    assert.ok(turned.states.every((state) => !state.moving));
     assert.equal(await undoTitle(), "Rückgängig: Seiten drehen (Strg/⌘ Z)");
     const before = await order();
     const returned = await gesture(1, [
@@ -4537,6 +4511,20 @@ test(
       ...circle(1, 40, -90, 10),
     ]);
     assert.ok(returned.states.every((state) => !state.turning));
+    assert.ok(returned.states.slice(1).every((state) => state.moving));
+    assert.deepEqual(await order(), before);
+    assert.equal(await undoTitle(), "Rückgängig: Seiten drehen (Strg/⌘ Z)");
+    const switched = await gesture(1, [
+      ...circle(1, 40, -90, 10),
+      [2, 0.5, 0.5],
+      ...circle(1, 40, -90, 10),
+    ]);
+    assert.ok(switched.states.some((state) => state.turning));
+    const firstMove = switched.states.findIndex((state) => state.moving);
+    assert.ok(firstMove > 0);
+    assert.ok(switched.states.slice(firstMove).every((state) => state.moving && !state.turning));
+    await gesture(1, circle(1, 40, -90, 10), true);
+    await gesture(1, [[1, 0.5, 0.5], [2, 0.5, 0.5]], true);
     assert.deepEqual(await order(), before);
     assert.equal(await undoTitle(), "Rückgängig: Seiten drehen (Strg/⌘ Z)");
     assert.deepEqual(b.errors, []);
@@ -5078,12 +5066,8 @@ test(
     const b = await browser(t);
     const state = () =>
       b.evaluate(() => ({
-        hidden: document
-          .querySelector("#workspace")
-          .classList.contains("pages-hidden"),
-        expanded: document
-          .querySelector("#editor-topbar [data-action=toggle-pages]")
-          .getAttribute("aria-expanded"),
+        hidden: !document.querySelector("#workspace").classList.contains("sidebar-visible"),
+        expanded: String(document.querySelector("#workspace").classList.contains("sidebar-reserved")),
       }));
     const closeActive = () =>
       b.evaluate(() =>
@@ -5098,10 +5082,9 @@ test(
     await closeActive();
     await b.wait(() => document.querySelectorAll("#file-list li").length === 1);
     assert.deepEqual(await state(), { hidden: true, expanded: "false" });
-    await b.evaluate(() =>
-      document.querySelector("#editor-topbar [data-action=toggle-pages]").click(),
-    );
-    assert.deepEqual(await state(), { hidden: false, expanded: "true" });
+    await b.command("Input.dispatchMouseEvent", { type: "mouseMoved", x: 10, y: 150 });
+    assert.deepEqual(await state(), { hidden: false, expanded: "false" });
+    await b.command("Input.dispatchMouseEvent", { type: "mouseMoved", x: 600, y: 300 });
     await closeActive();
     await b.wait(() => !document.querySelector("#file-list li"));
     assert.deepEqual(await state(), { hidden: true, expanded: "false" });

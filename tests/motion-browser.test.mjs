@@ -161,24 +161,26 @@ test("Browser: Menüs und Dialoge blenden ein und aus und bleiben direkt bedienb
   for (const width of [1440, 390]) {
     await b.command("Emulation.setDeviceMetricsOverride", { width, height: 960, deviceScaleFactor: 1, mobile: false });
     await b.wait((width) => innerWidth === width, 30000, width);
+    await b.evaluate(() => {
+      const pin = document.querySelector("#sidebar-pin");
+      if (pin.getAttribute("aria-pressed") !== "true") pin.click();
+      document.activeElement?.blur();
+    });
     await b.evaluate(async () => {
-      const toggle = document.querySelector('[data-action="toggle-pages"]');
-      if (toggle.getAttribute("aria-expanded") !== "true") toggle.click();
-      const panel = document.querySelector("#pages-panel");
-      await Promise.all(panel.getAnimations().map((animation) => animation.finished.catch(() => {})));
+      await Promise.all(document.querySelector("#pages-panel").getAnimations().map((animation) => animation.finished.catch(() => {})));
     });
     await b.screenshot(`/tmp/pdfhelper-motion-sidebar-${width}.png`);
+    await b.command("Input.dispatchMouseEvent", { type: "mouseMoved", x: width - 10, y: 500 });
     assert.deepEqual(await b.evaluate(async () => {
       const panel = document.querySelector("#pages-panel");
-      panel.querySelector("button").focus();
-      document.querySelector('[data-action="toggle-pages"]').click();
-      const inert = panel.inert;
-      const focusedInPanel = panel.contains(document.activeElement);
+      document.querySelector("#sidebar-pin").click();
+      document.activeElement?.blur();
+      await new Promise(queueMicrotask);
       const animations = panel.getAnimations();
       const closing = animations.some((animation) => animation.transitionProperty === "opacity");
       await Promise.all(animations.map((animation) => animation.finished.catch(() => {})));
-      return { inert, focusedInPanel, closing, display: getComputedStyle(panel).display };
-    }), { inert: true, focusedInPanel: false, closing: true, display: "none" });
+      return { closing, opacity: getComputedStyle(panel).opacity, pointerEvents: getComputedStyle(panel).pointerEvents };
+    }), { closing: true, opacity: "0", pointerEvents: "none" });
   }
   assert.deepEqual(b.errors, []);
 });
@@ -308,6 +310,7 @@ test("Browser: Nur gezielte Dokument-, Seiten- und Kapitelwechsel blenden fertig
   });
   await b.wait(() => window.contentFades.length === 1);
   assert.equal(await b.evaluate(() => window.contentFades[0].target), "epub-book");
+  await b.wait(() => !document.querySelector("#epub-previous").disabled);
   await b.evaluate(() => {
     window.contentFades.length = 0;
     document.querySelector("#epub-previous").click();
@@ -326,7 +329,7 @@ test("Browser: Nur gezielte Dokument-, Seiten- und Kapitelwechsel blenden fertig
   await b.wait(() => document.querySelector("#page-loading").hidden);
   assert.equal(await b.evaluate(() => window.contentFades.length), 0);
   assert.deepEqual(await b.evaluate(() => {
-    const toggle = document.querySelector('[data-action="toggle-pages"]');
+    const toggle = document.querySelector("#sidebar-pin");
     toggle.click();
     const panel = document.querySelector("#pages-panel");
     return [getComputedStyle(panel).transitionDuration, panel.getAnimations().length];

@@ -46,7 +46,7 @@ async function walk(directory) {
         const url = new URL(match[2], new URL(`../${path}`, import.meta.url));
         await readFile(url);
       }
-      if (path.startsWith("src/") && path !== "src/core/recent.js")
+      if (path.startsWith("src/") && !["src/core/recent.js", "src/ui/settings.js"].includes(path))
         assert.ok(
           !/localStorage|indexedDB|sessionStorage/.test(source),
           `Unerwartete Datenspeicherung: ${path}`,

@@ -7,7 +7,7 @@ import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 export async function browser(
   t,
-  { prefix = "/", viewport = { width: 1440, height: 960 }, reducedMotion = true } = {},
+  { prefix = "/", viewport = { width: 1440, height: 960 }, reducedMotion = true, toolbarPinned } = {},
 ) {
   const root = fileURLToPath(new URL("../../", import.meta.url)),
     profile = await mkdtemp(join(tmpdir(), "pdfhelper-browser-"));
@@ -134,6 +134,10 @@ export async function browser(
       flatten: true,
     });
   await command("Page.enable", {}, sessionId);
+  if (typeof toolbarPinned === "boolean")
+    await command("Page.addScriptToEvaluateOnNewDocument", {
+      source: `if (localStorage.getItem("pdfhelper:toolbar-pinned") === null) localStorage.setItem("pdfhelper:toolbar-pinned", ${JSON.stringify(String(toolbarPinned))});`,
+    }, sessionId);
   await command("Runtime.enable", {}, sessionId);
   await command(
     "Emulation.setDeviceMetricsOverride",
