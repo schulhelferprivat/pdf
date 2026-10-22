@@ -122,6 +122,8 @@ export function transplantForms(
     const dict = field.acroField.dict.clone();
     dict.delete(name("Parent"));
     dict.delete(name("Kids"));
+    dict.delete(name("A"));
+    dict.delete(name("AA"));
     if (dict.get(name("Subtype")) === name("Widget")) {
       for (const key of [
         "Subtype",
@@ -152,7 +154,7 @@ export function transplantForms(
     copied.set(name("Kids"), kids);
     for (const { widget, page } of widgets) {
       const widgetDict = widget.dict.clone();
-      for (const key of ["Parent", "P", "T", "FT", "V", "DV", "Kids"])
+      for (const key of ["Parent", "P", "T", "FT", "V", "DV", "Kids", "A", "AA"])
         widgetDict.delete(name(key));
       widgetDict.set(name("Subtype"), name("Widget"));
       const next = copier.copy(widgetDict);

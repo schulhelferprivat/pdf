@@ -1158,6 +1158,9 @@ body.resizing-panels * {
   background: #fff;
   box-shadow: 0 3px 18px #0005;
 }
+.page-flow.pdf-dark .page-slot {
+  background: #202329;
+}
 .page-flow.two-pages .page-slot {
   margin-inline: 0;
 }
@@ -1189,6 +1192,10 @@ body.resizing-panels * {
   color-scheme: light;
   isolation: isolate;
   transform-origin: 0 0;
+}
+.page-flow.pdf-dark .page-stage {
+  color: #e8edf2;
+  color-scheme: dark;
 }
 .page-scroll > .page-stage {
   display: none;
@@ -1395,6 +1402,15 @@ body.resizing-panels * {
   outline-offset: 1px;
   background: #fff !important;
 }
+.page-flow.pdf-dark #form-layer :is(input, select, textarea) {
+  color: #e8edf2;
+}
+.page-flow.pdf-dark #form-layer :is(input[type="checkbox"], input[type="radio"]) {
+  background: #202329;
+}
+.page-flow.pdf-dark #form-layer :is(input, select, textarea):focus {
+  background: #202329 !important;
+}
 .annotation {
   position: absolute;
   transform-origin: 0 0;
@@ -1439,6 +1455,9 @@ body.resizing-panels * {
   overflow: hidden;
   cursor: text;
   user-select: text;
+}
+.page-flow.pdf-dark .annotation .inline-text {
+  background: #202329d9;
 }
 .page-stage.text-editing .interaction-layer {
   pointer-events: none;

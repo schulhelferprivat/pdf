@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { browser } from "./helpers/browser.mjs";
 import { openBlankDocument, selectDocument } from "./helpers/documents.mjs";
 import { tiffFixture } from "./helpers/formats.mjs";
+import { deflateTiffFixture } from "./helpers/tiff.mjs";
 import { deflateSync } from "node:zlib";
 
 test("Browser: TIFF-Ausrichtungen, Deflate und Abbruch im Worker", { timeout: 90000 }, async (t) => {
@@ -51,6 +52,44 @@ test("Browser: TIFF-Ausrichtungen, Deflate und Abbruch im Worker", { timeout: 90
   assert.equal(result.packedPages, 1);
   assert.equal(result.abort, "AbortError");
   assert.equal(result.recovered, true);
+  assert.deepEqual(b.errors, []);
+});
+
+test("Browser: TIFF-Worker lehnt Deflate-Speicherbomben ab und verarbeitet danach gültige Dateien", { timeout: 60000 }, async (t) => {
+  const b = await browser(t);
+  const invalid = [
+    deflateTiffFixture({ block: () => new Uint8Array(8 * 1024 ** 2) }),
+    deflateTiffFixture({ packed: (bytes) => bytes.subarray(0, bytes.length - 1) }),
+    deflateTiffFixture({ packed: () => new Uint8Array(18) }),
+    deflateTiffFixture({ bits: [8] }),
+  ];
+  const valid = [
+    deflateTiffFixture({ height: 5, rows: 2 }),
+    deflateTiffFixture({ width: 17, height: 19, tile: [16, 16] }),
+  ];
+  const result = await b.evaluate(async ({ invalid, valid }) => {
+    const { processPdf } = await import("./src/pdf/client.js");
+    const { pdfLib } = await import("./src/pdf/vendors.js");
+    const lib = await pdfLib(), errors = [], dimensions = [];
+    const jobs = [...invalid, ...valid].map((bytes) => processPdf("tiff-pdf", { data: new Uint8Array(bytes) }));
+    for (const result of await Promise.allSettled(jobs)) {
+      if (result.status === "rejected") errors.push(result.reason.message);
+      else {
+        const doc = await lib.PDFDocument.load(result.value.data);
+        const images = doc.getPage(0).node.Resources().lookup(lib.PDFName.of("XObject"), lib.PDFDict);
+        const image = doc.context.lookup(images.entries()[0][1]);
+        dimensions.push([
+          image.dict.lookup(lib.PDFName.of("Width"), lib.PDFNumber).asNumber(),
+          image.dict.lookup(lib.PDFName.of("Height"), lib.PDFNumber).asNumber(),
+        ]);
+      }
+    }
+    return { errors, dimensions };
+  }, { invalid: invalid.map((bytes) => [...bytes]), valid: valid.map((bytes) => [...bytes]) });
+  assert.equal(result.errors.length, invalid.length);
+  assert.match(result.errors[0], /überschreiten.*Bildgröße/);
+  assert.ok(result.errors.every((message) => /TIFF/.test(message)));
+  assert.deepEqual(result.dimensions, [[3, 5], [17, 19]]);
   assert.deepEqual(b.errors, []);
 });
 

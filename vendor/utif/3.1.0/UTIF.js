@@ -129,12 +129,12 @@ UTIF.decodeImage = function(buff, img, ifds)
 		var tw = img["t322"][0], th = img["t323"][0];
 		var tx = Math.floor((img.width  + tw - 1) / tw);
 		var ty = Math.floor((img.height + th - 1) / th);
-		var tbuff = new Uint8Array(Math.ceil(tw*th*bipp/8)|0);
+		var tbuff = new Uint8Array(Math.ceil(tw*bipp/8)*th);
 		for(var y=0; y<ty; y++)
 			for(var x=0; x<tx; x++)
 			{
 				var i = y*tx+x;  for(var j=0; j<tbuff.length; j++) tbuff[j]=0;
-				UTIF.decode._decompress(img,ifds, data, soff[i], bcnt[i], cmpr, tbuff, 0, fo);
+				UTIF.decode._decompress(img,ifds, data, soff[i], bcnt[i], cmpr, tbuff, 0, fo, tbuff.length);
 				// Might be required for 7 too. Need to check
 				if (cmpr==6) bytes = tbuff;
 				else UTIF._copyTile(tbuff, Math.ceil(tw*bipp/8)|0, th, bytes, Math.ceil(img.width*bipp/8)|0, img.height, Math.ceil(x*tw*bipp/8)|0, y*th);
@@ -146,7 +146,7 @@ UTIF.decodeImage = function(buff, img, ifds)
 		var rps = img["t278"] ? img["t278"][0] : img.height;   rps = Math.min(rps, img.height);
 		for(var i=0; i<soff.length; i++)
 		{
-			UTIF.decode._decompress(img,ifds, data, soff[i], bcnt[i], cmpr, bytes, Math.ceil(bilen/8)|0, fo);
+			UTIF.decode._decompress(img,ifds, data, soff[i], bcnt[i], cmpr, bytes, Math.ceil(bilen/8)|0, fo, Math.min(rps, img.height-i*rps)*(bipl>>>3));
 			bilen += bipl * rps;
 		}
 		bilen = Math.min(bilen, bytes.length*8);
@@ -154,18 +154,31 @@ UTIF.decodeImage = function(buff, img, ifds)
 	img.data = new Uint8Array(bytes.buffer, 0, Math.ceil(bilen/8)|0);
 }
 
-UTIF.decode._decompress = function(img,ifds, data, off, len, cmpr, tgt, toff, fo)  // fill order
+UTIF.decode._decompress = function(img,ifds, data, off, len, cmpr, tgt, toff, fo, expected)
 {
 	//console.log("compression", cmpr);
 	//var time = Date.now();
 	if(false) {}
-	else if(cmpr==1 || (len==tgt.length && cmpr!=32767)) for(var j=0; j<len; j++) tgt[toff+j] = data[off+j];
+	else if(cmpr==1 || (len==tgt.length && cmpr!=32767 && cmpr!=8)) for(var j=0; j<len; j++) tgt[toff+j] = data[off+j];
 	else if(cmpr==3) UTIF.decode._decodeG3 (data, off, len, tgt, toff, img.width, fo);
 	else if(cmpr==4) UTIF.decode._decodeG4 (data, off, len, tgt, toff, img.width, fo);
 	else if(cmpr==5) UTIF.decode._decodeLZW(data, off, tgt, toff);
 	else if(cmpr==6) UTIF.decode._decodeOldJPEG(img, data, off, len, tgt, toff);
 	else if(cmpr==7) UTIF.decode._decodeNewJPEG(img, data, off, len, tgt, toff);
-	else if(cmpr==8) {  var src = new Uint8Array(data.buffer,off,len);  var bin = pako["inflate"](src);  for(var i=0; i<bin.length; i++) tgt[toff+i]=bin[i];  }
+	else if(cmpr==8) {
+		if(!Number.isSafeInteger(expected) || expected<=0 || toff<0 || toff+expected>tgt.length)
+			throw new Error("Die TIFF-Datei enthält ungültige Größenangaben.");
+		var inflater = new pako.Inflate({chunkSize: Math.min(16384, expected+1)}), written = 0;
+		inflater.onData = function(chunk) {
+			if(written+chunk.length>expected)
+				throw new Error("Die entpackten TIFF-Daten überschreiten die erwartete Bildgröße.");
+			tgt.set(chunk, toff+written);
+			written += chunk.length;
+		};
+		inflater.push(new Uint8Array(data.buffer, data.byteOffset+off, len), false);
+		if(!inflater.ended || inflater.err || written!==expected || inflater.strm.avail_in!==0)
+			throw new Error("Die komprimierten TIFF-Daten sind beschädigt oder unvollständig.");
+	}
 	else if(cmpr==32767) UTIF.decode._decodeARW(img, data, off, len, tgt, toff);
 	else if(cmpr==32773) UTIF.decode._decodePackBits(data, off, len, tgt, toff);
 	else if(cmpr==32809) UTIF.decode._decodeThunder (data, off, len, tgt, toff);

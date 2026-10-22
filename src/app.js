@@ -40,6 +40,7 @@ import {
 } from "./core/recent.js";
 import { processPdf } from "./pdf/client.js";
 import { Renderer } from "./pdf/renderer.js";
+import { darkTextColor } from "./pdf/dark.js";
 import {
   buildPdf,
   download,
@@ -55,6 +56,7 @@ import { setHidden, setupDisclosures, fadeContent, cancelContentFade, holdEntran
 import { setupPanelResizing } from "./ui/panels.js";
 import { setupToolbar } from "./ui/toolbar.js";
 import { setupSidebar } from "./ui/sidebar.js";
+import { readPdfDark, writePdfDark } from "./ui/settings.js";
 const $ = (id) => document.getElementById(id);
 const sources = new Map(),
   assets = new Map();
@@ -68,6 +70,7 @@ let activeId = null,
   scale = 1,
   zoom = "fit-width",
   twoPages = false,
+  pdfDark = readPdfDark(),
   historyMenuState = null,
   perSheet = 2,
   busy = null,
@@ -85,6 +88,8 @@ const current = () =>
 const element = () =>
   current()?.elements.find((el) => el.id === selectedElement);
 installIcons();
+$("pdf-dark-button").setAttribute("aria-pressed", String(pdfDark));
+$("page-flow").classList.toggle("pdf-dark", pdfDark);
 setupDisclosures();
 const sidebar = setupSidebar(() => documents.length > 0 &&
   !(documents.length === 1 && documents[0].kind === "pdf" && documents[0].pages.length <= 1));
@@ -1215,7 +1220,7 @@ async function drainThumbnails() {
             116 / displayedSize(job.page).width,
             156 / displayedSize(job.page).height,
           ),
-          { document: job.doc },
+          { document: job.doc, darkMode: pdfDark },
         );
         if (job.generation === thumbnailGeneration && job.target.isConnected) {
           job.target.querySelector("canvas")?.remove();
@@ -1343,6 +1348,7 @@ function releasePreview(slot) {
 }
 function previewKey(doc, page, slot) {
   return JSON.stringify([
+    pdfDark,
     slot.dataset.scale,
     page.sourceId,
     page.index,
@@ -1388,7 +1394,7 @@ async function drainPreviews() {
           page,
           canvas,
           Number(slot.dataset.scale) * Math.min(devicePixelRatio || 1, 2),
-          { preview: true, document: doc, signal: controller.signal },
+          { preview: true, document: doc, darkMode: pdfDark, signal: controller.signal },
         );
         if (controller.signal.aborted || !slot.isConnected)
           freeCanvas(canvas);
@@ -1748,7 +1754,7 @@ async function renderPage({ animate = false, preserveNavigation = false } = {}) 
       page,
       canvas,
       scale * Math.min(devicePixelRatio || 1, 2),
-      { main: true },
+      { main: true, darkMode: pdfDark },
     );
     await layersReady;
     if (generation === renderGeneration) {
@@ -2164,7 +2170,7 @@ function renderElements() {
       } else item.textContent = el.text;
       item.style.fontSize = `${el.fontSize * scale}px`;
       item.style.fontWeight = el.bold ? "700" : "400";
-      item.style.color = el.color;
+      item.style.color = pdfDark ? darkTextColor(el.color) : el.color;
       item.style.opacity = el.opacity ?? 1;
     }
     if (el.type === "highlight") {
@@ -5077,6 +5083,15 @@ const actions = {
     void renderPage();
     if (current()) scrollToPage(current().id);
     fadeContent($("page-flow"));
+  },
+  "toggle-pdf-dark": () => {
+    pdfDark = !pdfDark;
+    writePdfDark(pdfDark);
+    $("pdf-dark-button").setAttribute("aria-pressed", String(pdfDark));
+    $("page-flow").classList.toggle("pdf-dark", pdfDark);
+    for (const slot of $("page-flow").children) releasePreview(slot);
+    mainCanvasPage = null;
+    renderAll();
   },
   "zoom-in": () => zoomBy(1.2),
   "zoom-out": () => zoomBy(1 / 1.2),

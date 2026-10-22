@@ -58,7 +58,7 @@ const packages = [
 ];
 for (const [name, version, license] of [
   ["utif", "3.1.0", "MIT"],
-  ["pako", "1.0.11", "MIT AND Zlib"],
+  ["pako", "3.0.2", "MIT AND Zlib"],
   ["epubjs", "0.3.93", "BSD-2-Clause"],
 ]) packages.push([name, version, license, `https://registry.npmjs.org/${name}/${version}`, `vendor/${name}`]);
 const manifest = [];

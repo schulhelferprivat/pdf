@@ -3,6 +3,7 @@ import { pdfJs, renderOptions } from "./vendors.js";
 import { displayedSize, normalizeAngle } from "../core/model.js";
 import { fitSize, displayPoint, displayRect } from "../core/geometry.js";
 import { generateOutline } from "./outline.js";
+import { darkenCanvas, darkTextColor } from "./dark.js";
 export class Renderer {
   constructor(sources, assets) {
     this.sources = sources;
@@ -15,6 +16,7 @@ export class Renderer {
     this.thumbnailCanvases = new Map();
     this.outlines = new Map();
     this.texts = new Map();
+    this.imageRotations = new WeakMap();
   }
   async source(id) {
     if (!this.documents.has(id)) {
@@ -69,6 +71,7 @@ export class Renderer {
       preview = false,
       document = null,
       composite = false,
+      darkMode = false,
       signal,
     } = {},
   ) {
@@ -97,6 +100,8 @@ export class Renderer {
       bounds.width / size.width,
       bounds.height / size.height,
     );
+    let imageCoordinates = null;
+    let imageRotation = 0;
     if (page.sourceId) {
       this.uses.set(page.sourceId, (this.uses.get(page.sourceId) || 0) + 1);
       try {
@@ -107,15 +112,18 @@ export class Renderer {
             "Veraltete Ansicht",
             "RenderingCancelledException",
           );
+        const angle = normalizeAngle((page.baseRotation || 0) + page.rotation);
         const viewport = sourcePage.getViewport({
           scale: effective,
-          rotation: normalizeAngle((page.baseRotation || 0) + page.rotation),
+          rotation: angle,
         });
+        const needsCoordinates = darkMode && !sourcePage.imageCoordinates;
         const task = sourcePage.render({
           canvasContext: ctx,
           viewport,
           annotationMode: 2,
           background: "#fff",
+          recordImages: darkMode,
         });
         if (main) this.mainTask = task;
         const abort = () => task.cancel();
@@ -123,6 +131,12 @@ export class Renderer {
         this.renderTasks.add(task);
         try {
           await task.promise;
+          if (darkMode) {
+            if (needsCoordinates && !this.imageRotations.has(sourcePage))
+              this.imageRotations.set(sourcePage, angle);
+            imageCoordinates = sourcePage.imageCoordinates;
+            imageRotation = normalizeAngle(angle - (this.imageRotations.get(sourcePage) ?? angle));
+          }
         } finally {
           this.renderTasks.delete(task);
           signal?.removeEventListener("abort", abort);
@@ -136,8 +150,10 @@ export class Renderer {
         this.trim();
       }
     }
+    if (signal?.aborted) throw new DOMException("Abgebrochen", "AbortError");
+    if (darkMode) darkenCanvas(ctx, imageCoordinates, imageRotation);
     if (document && (composite || !main))
-      await this.composite(page, ctx, effective, document);
+      await this.composite(page, ctx, effective, document, darkMode);
     return {
       width: size.width * scale,
       height: size.height * scale,
@@ -145,7 +161,7 @@ export class Renderer {
       actualDpi: effective * 72,
     };
   }
-  async composite(page, ctx, scale, document) {
+  async composite(page, ctx, scale, document, darkMode = false) {
     ctx.save();
     ctx.scale(scale, scale);
     for (const widget of page.widgets || []) {
@@ -153,13 +169,13 @@ export class Renderer {
       const key = `${page.formGroup}:${widget.name}`;
       const value = document.formValues[key] ?? widget.value;
       const rect = displayRect(page, widget.rect);
-      ctx.fillStyle = "#fff";
+      ctx.fillStyle = darkMode ? "#202329" : "#fff";
       ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
       ctx.save();
       ctx.beginPath();
       ctx.rect(rect.x, rect.y, rect.width, rect.height);
       ctx.clip();
-      ctx.fillStyle = "#111";
+      ctx.fillStyle = darkMode ? "#e8edf2" : "#111";
       ctx.font = `${Math.min(12, rect.height * 0.7)}px Noto`;
       if (widget.type === "checkbox" || widget.type === "radio") {
         ctx.strokeStyle = "#777";
@@ -191,7 +207,7 @@ export class Renderer {
         (((page.baseRotation || 0) + page.rotation - el.angle) * Math.PI) / 180,
       );
       ctx.globalAlpha = el.opacity ?? 1;
-      ctx.fillStyle = el.color;
+      ctx.fillStyle = darkMode && el.type === "text" ? darkTextColor(el.color) : el.color;
       ctx.strokeStyle = el.color;
       if (el.type === "image") {
         const asset = this.assets.get(el.assetId);

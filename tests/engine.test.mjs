@@ -65,6 +65,65 @@ async function makePayload() {
     options: {},
   };
 }
+test("PDF-Export entfernt Aktionen an Seiten, Feldern und Widgets in allen Exportvarianten", async () => {
+  const payload = await makePayload();
+  const source = await lib.PDFDocument.load(payload.sources[0].data);
+  const name = lib.PDFName.of;
+  const action = source.context.register(source.context.obj({
+    S: "JavaScript",
+    JS: lib.PDFHexString.fromText('app.alert("security-regression")'),
+  }));
+  const attach = (dict, trigger) => {
+    dict.set(name("A"), action);
+    dict.set(name("AA"), source.context.obj({ [trigger]: action }));
+  };
+  for (const page of source.getPages()) {
+    page.drawText("Sichtbarer Inhalt", { x: 30, y: 250, size: 12 });
+    attach(page.node, "O");
+  }
+  for (const field of source.getForm().getFields()) {
+    attach(field.acroField.dict, "K");
+    for (const widget of field.acroField.getWidgets()) attach(widget.dict, "U");
+  }
+  payload.sources[0].data = await source.save();
+  for (const options of [
+    {},
+    { plainGroup: "group" },
+    { password: "security-export" },
+    { flatten: true },
+    { flatten: true, password: "security-export" },
+    { layout: { perSheet: 2, students: 1, autoOrientation: true } },
+  ]) {
+    const { data } = await assemble({ ...payload, options });
+    const output = await lib.PDFDocument.load(data, { password: options.password });
+    const seen = new Set();
+    const check = (object) => {
+      if (!object || seen.has(object)) return;
+      seen.add(object);
+      if (object instanceof lib.PDFDict) {
+        assert.equal(object.has(name("A")), false);
+        assert.equal(object.has(name("AA")), false);
+        assert.notEqual(object.get(name("S")), name("JavaScript"));
+        for (const [, value] of object.entries()) check(value);
+      } else if (object instanceof lib.PDFArray) {
+        for (const value of object.asArray()) check(value);
+      } else if (object.dict) check(object.dict);
+    };
+    for (const [, object] of output.context.enumerateIndirectObjects()) check(object);
+    for (const page of output.getPages()) assert.ok(page.node.Contents());
+    const fields = output.getForm();
+    if (options.flatten || options.layout) assert.equal(fields.getFields().length, 0);
+    else {
+      const prefix = options.plainGroup ? "" : "group.";
+      assert.equal(fields.getTextField(`${prefix}shared`).getText(), "Prüfung äöü ß Ω");
+      assert.equal(fields.getCheckBox(`${prefix}check`).isChecked(), true);
+      assert.equal(fields.getRadioGroup(`${prefix}radio`).getSelected(), "B");
+      assert.deepEqual(fields.getDropdown(`${prefix}select`).getSelected(), ["Zwei"]);
+      for (const field of fields.getFields())
+        for (const widget of field.acroField.getWidgets()) assert.ok(widget.dict.has(name("AP")));
+    }
+  }
+});
 test("AcroForm wird nach Umordnen mit Ressourcen und allen Feldtypen übernommen", async () => {
   const payload = await makePayload();
   payload.document.pages.reverse();

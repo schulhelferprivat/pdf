@@ -553,6 +553,8 @@ export async function assemble(payload, progress = () => {}) {
       const original = source.getPage(page.index);
       const node = original.node.clone();
       node.delete(lib.PDFName.of("Annots"));
+      node.delete(lib.PDFName.of("A"));
+      node.delete(lib.PDFName.of("AA"));
       const copied = copier.copy(node);
       const ref = output.context.register(copied);
       const target = lib.PDFPage.of(copied, ref, output);

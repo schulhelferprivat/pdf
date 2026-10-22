@@ -921,27 +921,27 @@
         },
         {
           "path": "vendor/utif/3.1.0/UTIF.js",
-          "sha256": "e3e76115f49571e39624c3316a76b3c4c5b2c5ca518dfec4b66a9f7af8c6d059"
+          "sha256": "d2379c71918d4a4e8ae211bd5131d6b62246b6fe39588d4939756bb6075e0b9d"
         }
       ]
     },
     {
       "name": "pako",
-      "version": "1.0.11",
+      "version": "3.0.2",
       "license": "MIT AND Zlib",
-      "source": "https://registry.npmjs.org/pako/1.0.11",
+      "source": "https://registry.npmjs.org/pako/3.0.2",
       "files": [
         {
-          "path": "vendor/pako/1.0.11/LICENSE",
+          "path": "vendor/pako/3.0.2/LICENSE",
           "sha256": "a04665b3b2de56c66730c1f720f528175739e4104f79073614aa611da1e85539"
         },
         {
-          "path": "vendor/pako/1.0.11/ZLIB-LICENSE",
+          "path": "vendor/pako/3.0.2/ZLIB-LICENSE",
           "sha256": "0e2f1daaabe2282cee397ee837699edc35ac84315c553f438448b2b4650de1d4"
         },
         {
-          "path": "vendor/pako/1.0.11/pako.min.js",
-          "sha256": "29cfa0542b9864b6640cfdcc8f15b184db6431b532db2702a3ce97e5f2a7fc1c"
+          "path": "vendor/pako/3.0.2/pako.umd.min.js",
+          "sha256": "7692e029120a7b93a50e58029ec077688b711909ccfe72f43e6b1fe2ad4da4f7"
         }
       ]
     },
