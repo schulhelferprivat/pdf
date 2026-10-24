@@ -902,3 +902,78 @@ test("Speichern erhält das Aussehen unveränderter Felder und erzeugt nur geän
   assert.ok(resources.lookup(name("Font"), lib.PDFDict).has(name("Helv")));
   assert.equal(form.getTextField("unten").acroField.dict.lookup(name("DA")).decodeText(), "/Helv 0 Tf 0 g");
 });
+test("Zu langer Formulartext wird beim Speichern verkleinert und automatische Größe bleibt erhalten", async () => {
+  const doc = await lib.PDFDocument.create();
+  const page = doc.addPage([400, 400]);
+  const context = doc.context,
+    name = lib.PDFName.of,
+    fields = [];
+  for (const [title, appearance, flags, rect] of [
+    ["auto", "/Helv 0 Tf 0 g", 0, [20, 300, 120, 320]],
+    ["fest", "/Helv 14 Tf 0 g", 0, [20, 250, 120, 270]],
+    ["kurz", "/Helv 14 Tf 0 g", 0, [20, 200, 220, 220]],
+    ["mehrzeilig", "/Helv 0 Tf 0 g", 1 << 12, [20, 100, 120, 150]],
+  ]) {
+    const ref = context.register(
+      context.obj({
+        Type: "Annot",
+        Subtype: "Widget",
+        FT: "Tx",
+        T: lib.PDFString.of(title),
+        DA: lib.PDFString.of(appearance),
+        Ff: flags,
+        Rect: rect,
+        P: page.ref,
+        F: 4,
+      }),
+    );
+    page.node.addAnnot(ref);
+    fields.push(ref);
+  }
+  doc.catalog.set(name("AcroForm"), context.obj({ Fields: fields }));
+  const data = new Uint8Array(await doc.save({ updateFieldAppearances: false })),
+    info = await inspect(data);
+  const long = "Ein sehr langer Text, der deutlich zu breit für dieses Feld ist";
+  const { data: saved } = await assemble({
+    fontBytes,
+    sources: [{ id: "source", data }],
+    document: {
+      pages: info.pages.map((entry, i) => createPage("source", i, entry, "group")),
+      formValues: {
+        "group:auto": long,
+        "group:fest": "Etwas zu lang für vierzehn Punkt",
+        "group:kurz": "kurz",
+        "group:mehrzeilig": `${long} ${long}`,
+      },
+    },
+    options: { plainGroup: "group" },
+  });
+  const form = (await lib.PDFDocument.load(saved)).getForm();
+  const sizes = Object.fromEntries(
+    ["auto", "fest", "kurz", "mehrzeilig"].map((field) => {
+      const widget = form.getTextField(field).acroField.getWidgets()[0];
+      const content = Buffer.from(
+        lib.decodePDFRawStream(widget.getAppearances().normal).decode(),
+      ).toString("latin1");
+      return [field, Number(content.match(/([\d.]+) Tf/)[1])];
+    }),
+  );
+  assert.equal(sizes.auto, 6);
+  assert.ok(sizes.fest >= 6 && sizes.fest < 14);
+  assert.equal(sizes.kurz, 14);
+  assert.ok(sizes.mehrzeilig >= 6 && sizes.mehrzeilig < 12);
+  assert.equal(
+    form.getTextField("auto").acroField.dict.lookup(name("DA")).decodeText(),
+    "/Helv 0 Tf 0 g",
+  );
+  const reopened = await inspect(saved);
+  assert.deepEqual(
+    reopened.pages[0].widgets.map((widget) => [widget.name, widget.fontSize]),
+    [
+      ["auto", null],
+      ["fest", 14],
+      ["kurz", 14],
+      ["mehrzeilig", null],
+    ],
+  );
+});

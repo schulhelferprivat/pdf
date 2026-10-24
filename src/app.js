@@ -25,6 +25,7 @@ import {
   lineRects,
   sweepStep,
   snapTurn,
+  fitFontSize,
 } from "./core/geometry.js";
 import { findMatches, normalizeQuery } from "./core/search.js";
 import { validateFile, normalizeImage, readBytes, fileTypes, fileAccept, fileExtension, documentName } from "./core/files.js";
@@ -2252,6 +2253,28 @@ function choiceLabel(widget, value) {
   const index = widget.options.indexOf(value);
   return index < 0 ? value : (widget.labels?.[index] ?? value);
 }
+const measureContext = document.createElement("canvas").getContext("2d");
+function fitFormControl(input, widget, width, height) {
+  if (
+    !(widget.type === "text" || (widget.type === "select" && widget.editable)) ||
+    widget.comb
+  )
+    return;
+  const size = fitFontSize(
+    widget.password ? "•".repeat(input.value.length) : input.value,
+    {
+      width,
+      height,
+      size: widget.fontSize,
+      multiline: widget.multiline,
+      measure: (text, value) => {
+        measureContext.font = `${value}px Noto`;
+        return measureContext.measureText(text).width;
+      },
+    },
+  );
+  input.style.fontSize = `${size * scale}px`;
+}
 function updateFormControl(input, widget, value) {
   if (widget.type === "checkbox" || widget.type === "radio")
     input.checked = widget.on !== "" && value === widget.on;
@@ -2328,7 +2351,7 @@ function renderForms() {
       input.value = widget.on;
     }
     updateFormControl(input, widget, value);
-    controls.push({ input, widget, key });
+    controls.push({ input, widget, key, width, height });
     const [left, top] = displayPoint(page, widget.rect[0], widget.rect[3]);
     input.style.left = `${left * scale}px`;
     input.style.top = `${top * scale}px`;
@@ -2337,6 +2360,10 @@ function renderForms() {
     input.style.transformOrigin = "0 0";
     input.style.transform = `rotate(${normalizeAngle((page.baseRotation || 0) + page.rotation)}deg)`;
     input.style.fontSize = `${fontSize * scale}px`;
+    fitFormControl(input, widget, width, height);
+    input.addEventListener("input", () =>
+      fitFormControl(input, widget, width, height),
+    );
     input.style.textAlign = widget.align || "left";
     if (widget.color) input.style.setProperty("--field-color", widget.color);
     if (widget.background) input.style.setProperty("--field-bg", widget.background);
@@ -2357,8 +2384,10 @@ function renderForms() {
       renderThumbnails();
       updateHistoryControls();
       for (const control of controls)
-        if (control.key === key)
+        if (control.key === key) {
           updateFormControl(control.input, control.widget, next);
+          fitFormControl(control.input, control.widget, control.width, control.height);
+        }
     };
     input.addEventListener("focus", () => {
       if (selectedElement) {

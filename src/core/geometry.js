@@ -133,3 +133,35 @@ export function snapTurn(sweep) {
   const turns = Math.floor((Math.abs(sweep) + 90 - snapThreshold) / 90);
   return normalizeAngle(Math.sign(sweep) * turns * 90);
 }
+export function wrapText(text, width, measure) {
+  const lines = [];
+  for (const paragraph of String(text ?? "").split("\n")) {
+    let line = "";
+    for (const word of paragraph.split(" ")) {
+      const next = line ? `${line} ${word}` : word;
+      if (measure(next) > width && line) {
+        lines.push(line);
+        line = word;
+      } else line = next;
+    }
+    lines.push(line);
+  }
+  return lines;
+}
+export function fitFontSize(
+  text,
+  { width, height, size = null, multiline = false, measure, min = 6 },
+) {
+  const start = size || (multiline ? 12 : Math.min(12, height * 0.72));
+  if (!text) return start;
+  const fits = (value) =>
+    multiline
+      ? wrapText(text, width - 4, (line) => measure(line, value)).length *
+          value *
+          1.2 <=
+        height - 4
+      : measure(text, value) <= width - 4;
+  let value = start;
+  while (value - 0.5 >= min && !fits(value)) value -= 0.5;
+  return value;
+}

@@ -1,7 +1,13 @@
 import { readBytes } from "../core/files.js";
 import { pdfJs, renderOptions } from "./vendors.js";
 import { displayedSize, normalizeAngle } from "../core/model.js";
-import { fitSize, displayPoint, displayRect } from "../core/geometry.js";
+import {
+  fitSize,
+  displayPoint,
+  displayRect,
+  fitFontSize,
+  wrapText,
+} from "../core/geometry.js";
 import { generateOutline } from "./outline.js";
 import { darkenCanvas, darkTextColor } from "./dark.js";
 export class Renderer {
@@ -176,7 +182,33 @@ export class Renderer {
       ctx.rect(rect.x, rect.y, rect.width, rect.height);
       ctx.clip();
       ctx.fillStyle = darkMode ? "#e8edf2" : widget.color || "#111";
-      const size = widget.fontSize || Math.min(12, rect.height * 0.7);
+      const text = Array.isArray(value)
+        ? value
+            .map((entry) => {
+              const index = widget.options?.indexOf(entry) ?? -1;
+              return index < 0 ? entry : (widget.labels?.[index] ?? entry);
+            })
+            .join(", ")
+        : widget.password
+          ? "•".repeat(String(value ?? "").length)
+          : String(value ?? "");
+      const width = widget.rect[2] - widget.rect[0],
+        height = widget.rect[3] - widget.rect[1];
+      const measure = (line, value) => {
+        ctx.font = `${value}px Noto`;
+        return ctx.measureText(line).width;
+      };
+      const size =
+        (widget.type === "text" && !widget.comb) ||
+        (widget.type === "select" && widget.editable)
+          ? fitFontSize(text, {
+              width,
+              height,
+              size: widget.fontSize,
+              multiline: widget.multiline,
+              measure,
+            })
+          : widget.fontSize || Math.min(12, rect.height * 0.7);
       ctx.font = `${size}px Noto`;
       ctx.textAlign = widget.align || "left";
       const textX =
@@ -192,25 +224,17 @@ export class Renderer {
         if (widget.on !== "" && value === widget.on)
           ctx.fillText("✓", rect.x + 2, rect.y + rect.height * 0.8);
       } else {
-        const text = Array.isArray(value)
-          ? value
-              .map((entry) => {
-                const index = widget.options?.indexOf(entry) ?? -1;
-                return index < 0 ? entry : (widget.labels?.[index] ?? entry);
-              })
-              .join(", ")
-          : widget.password
-            ? "•".repeat(String(value ?? "").length)
-            : String(value ?? "");
-        text
-          .split("\n")
-          .forEach((line, i) =>
-            ctx.fillText(
-              line,
-              textX,
-              rect.y + Math.min(size * 1.05, rect.height * 0.75) + i * size * 1.2,
-            ),
-          );
+        const lines = widget.multiline
+          ? wrapText(text, width - 4, (line) => measure(line, size))
+          : text.split("\n");
+        ctx.font = `${size}px Noto`;
+        lines.forEach((line, i) =>
+          ctx.fillText(
+            line,
+            textX,
+            rect.y + Math.min(size * 1.05, rect.height * 0.75) + i * size * 1.2,
+          ),
+        );
       }
       ctx.restore();
     }

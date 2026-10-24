@@ -5484,6 +5484,18 @@ test(
         input.dispatchEvent(new Event("change", { bubbles: true }));
       }
     });
+    const fitted = await b.evaluate(() => {
+      const input = document.querySelector('[data-field="Ort"]'),
+        size = () => parseFloat(input.style.fontSize);
+      const before = size();
+      input.value = "Ein sehr langer Ortsname, der nicht in das Feld passt";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      const shrunk = size();
+      input.value = "Hamburg";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      return { shrunk: shrunk < before, restored: size() === before };
+    });
+    assert.deepEqual(fitted, { shrunk: true, restored: true });
     await click(field("Ort"));
     await press("Tab", "Tab", 9);
     await b.wait(

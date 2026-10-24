@@ -24,6 +24,8 @@ import {
   lineRects,
   sweepStep,
   snapTurn,
+  wrapText,
+  fitFontSize,
 } from "../src/core/geometry.js";
 import { layoutPlan } from "../src/pdf/layout.js";
 import { findMatches, normalizeQuery } from "../src/core/search.js";
@@ -344,4 +346,22 @@ test("Werkzeug-Cursor enthalten Symbol, Farbe und Klickpunkt", () => {
     value,
   );
   assert.match(cursorIcon("eraser", { fallback: "default" }), /12 12, default$/);
+});
+test("Formulartext wird umgebrochen und bei Überlauf bis 6 pt verkleinert", () => {
+  const measure = (text, size) => text.length * size * 0.5;
+  assert.deepEqual(
+    wrapText("eins zwei drei\nvier", 10, (text) => text.length),
+    ["eins zwei", "drei", "vier"],
+  );
+  const single = { width: 104, height: 20, measure };
+  assert.equal(fitFontSize("", single), 12);
+  assert.equal(fitFontSize("kurz", single), 12);
+  assert.equal(fitFontSize("kurz", { ...single, size: 14 }), 14);
+  assert.equal(fitFontSize("x".repeat(25), { ...single, size: 14 }), 8);
+  assert.equal(fitFontSize("x".repeat(200), single), 6);
+  assert.equal(fitFontSize("kurz", { ...single, size: 4 }), 4);
+  const multi = { width: 104, height: 40, multiline: true, measure };
+  assert.equal(fitFontSize("wort ".repeat(4).trim(), multi), 12);
+  assert.equal(fitFontSize("wort ".repeat(20).trim(), multi), 7.5);
+  assert.equal(fitFontSize("wort ".repeat(60).trim(), multi), 6);
 });

@@ -1,3 +1,4 @@
+import { fitFontSize } from "../core/geometry.js";
 function fieldType(lib, field) {
   return field instanceof lib.PDFTextField
     ? "text"
@@ -401,8 +402,49 @@ export function transplantForms(
       return created.get(ref);
     })
     .filter((field) => field?.needsAppearancesUpdate());
-  for (const field of fields) field.defaultUpdateAppearances(font);
+  for (const field of fields) {
+    if (!(field instanceof lib.PDFTextField) || field.isCombed()) {
+      field.defaultUpdateAppearances(font);
+      continue;
+    }
+    const restore = fitTextAppearances(lib, output, field, font);
+    field.defaultUpdateAppearances(font);
+    restore();
+  }
   labelChoiceAppearances(lib, fields, font);
+}
+function fitTextAppearances(lib, document, field, font) {
+  const key = lib.PDFName.of("DA");
+  let text = "";
+  try {
+    text = field.getText() || "";
+  } catch {}
+  const saved = field.acroField.getWidgets().map((widget) => {
+    const own = widget.dict.get(key),
+      appearance = appearanceText(lib, document, field, widget),
+      { width, height } = widget.getRectangle();
+    const size = fitFontSize(text, {
+      width,
+      height,
+      size: textStyle(appearance).fontSize,
+      multiline: field.isMultiline(),
+      measure: (line, value) => font.widthOfTextAtSize(line, value),
+    });
+    widget.dict.set(
+      key,
+      lib.PDFString.of(
+        /[\d.]+\s+Tf\b/.test(appearance)
+          ? appearance.replace(/[\d.]+(\s+Tf\b)/, `${size}$1`)
+          : `/Helv ${size} Tf ${appearance || "0 g"}`,
+      ),
+    );
+    return { widget, own };
+  });
+  return () => {
+    for (const { widget, own } of saved)
+      if (own) widget.dict.set(key, own);
+      else widget.dict.delete(key);
+  };
 }
 function mergeResources(lib, source, target, output, copier) {
   const name = lib.PDFName.of;
