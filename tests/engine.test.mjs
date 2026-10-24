@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { pdfLib } from "../src/pdf/vendors.js";
+import { pdfLib, pdfJs } from "../src/pdf/vendors.js";
 import { assemble, inspect } from "../src/pdf/engine.js";
 import { createPage } from "../src/core/model.js";
 const lib = await pdfLib();
@@ -56,7 +56,7 @@ async function makePayload() {
       ),
       formValues: {
         "group:shared": "Prüfung äöü ß Ω",
-        "group:check": true,
+        "group:check": "Yes",
         "group:radio": "B",
         "group:select": ["Zwei"],
         "group:list": ["Rot", "Grün"],
@@ -635,4 +635,270 @@ test("Fremde PDF-Notizen mit Antworten, Status und Popup werden übernommen", as
     .asArray()
     .map((ref) => cleaned.context.lookup(ref).get(lib.PDFName.of("Subtype")).asString());
   assert.deepEqual(remaining, ["/Square"]);
+});
+async function legacyForm() {
+  const doc = await lib.PDFDocument.create();
+  const first = doc.addPage([400, 400]),
+    second = doc.addPage([400, 400]);
+  const context = doc.context,
+    name = lib.PDFName.of,
+    fields = [];
+  const appearance = (on) => {
+    const stream = context.register(
+      context.stream("", { BBox: [0, 0, 15, 15], Subtype: name("Form") }),
+    );
+    return context.obj({ N: { [on]: stream, Off: stream } });
+  };
+  const widget = (page, entries, rect = [20, 20, 120, 40]) => {
+    const ref = context.register(
+      context.obj({ Type: "Annot", Subtype: "Widget", Rect: rect, P: page.ref, F: 4, ...entries }),
+    );
+    page.node.addAnnot(ref);
+    return ref;
+  };
+  const field = (entries, kids = []) => {
+    const ref = context.register(context.obj({ ...entries, Kids: [] }));
+    for (const [page, extra] of kids)
+      context.lookup(ref).get(name("Kids")).push(widget(page, { Parent: ref, ...extra }));
+    fields.push(ref);
+    return ref;
+  };
+  fields.push(
+    widget(first, { FT: "Btn", T: lib.PDFString.of("ohneV"), AS: "Ja", AP: appearance("Ja") }),
+    widget(first, { FT: "Btn", T: lib.PDFString.of("ohneAP"), V: "Yes" }),
+    widget(first, { FT: "Tx", T: lib.PDFString.of("versteckt"), F: 2 }),
+    widget(first, { FT: "Tx", T: lib.PDFString.of("falschesP"), V: lib.PDFString.of("Wert"), P: second.ref }),
+    widget(second, {
+      FT: "Ch",
+      Ff: 1 << 17,
+      T: lib.PDFString.of("land"),
+      Opt: [[lib.PDFString.of("DE"), lib.PDFString.of("Deutschland")], [lib.PDFString.of("AT"), lib.PDFString.of("Österreich")]],
+      V: lib.PDFString.of("AT"),
+    }),
+  );
+  field({ FT: "Btn", T: lib.PDFString.of("gruppe"), V: "B" }, [
+    [first, { AS: "Off", AP: appearance("A") }],
+    [first, { AS: "B", AP: appearance("B") }],
+  ]);
+  field({ FT: "Btn", Ff: 1 << 15, T: lib.PDFString.of("ohneZustand") }, [
+    [first, {}],
+    [first, {}],
+  ]);
+  doc.catalog.set(name("AcroForm"), context.obj({ Fields: fields }));
+  return new Uint8Array(await doc.save({ updateFieldAppearances: false }));
+}
+test("Gespeicherte Formularinhalte werden auch aus untypischen Strukturen erkannt", async () => {
+  const info = await inspect(await legacyForm());
+  const find = (page, field) =>
+    info.pages[page].widgets.filter((widget) => widget.name === field);
+  assert.deepEqual(
+    find(0, "ohneV").map(({ value, on }) => ({ value, on })),
+    [{ value: "Ja", on: "Ja" }],
+  );
+  assert.deepEqual(
+    find(0, "ohneAP").map(({ value, on }) => ({ value, on })),
+    [{ value: "Yes", on: "Yes" }],
+  );
+  assert.deepEqual(
+    find(0, "gruppe").map(({ value, on }) => ({ value, on })),
+    [
+      { value: "B", on: "A" },
+      { value: "B", on: "B" },
+    ],
+  );
+  assert.ok(find(0, "ohneZustand").every((widget) => widget.on === "" && widget.value === ""));
+  assert.deepEqual(find(0, "versteckt"), []);
+  assert.deepEqual(find(0, "falschesP").length, 1);
+  assert.deepEqual(find(1, "falschesP"), []);
+  const [land] = find(1, "land");
+  assert.deepEqual(land.value, ["AT"]);
+  assert.deepEqual(land.options, ["DE", "AT"]);
+  assert.deepEqual(land.labels, ["Deutschland", "Österreich"]);
+});
+test("Exportwerte von Auswahlfeldern und Kontrollkästchen-Gruppen bleiben beim Speichern erhalten", async () => {
+  const data = await legacyForm(),
+    info = await inspect(data);
+  const payload = {
+    fontBytes,
+    sources: [{ id: "source", data }],
+    document: {
+      pages: info.pages.map((page, i) => createPage("source", i, page, "group")),
+      formValues: { "group:gruppe": "A", "group:land": ["DE"], "group:ohneV": "" },
+    },
+    options: { plainGroup: "group" },
+  };
+  const { data: saved } = await assemble(payload);
+  const output = await lib.PDFDocument.load(saved),
+    name = lib.PDFName.of;
+  const reopened = await inspect(saved);
+  const values = Object.fromEntries(
+    reopened.pages.flatMap((page) => page.widgets.map((widget) => [widget.name, widget.value])),
+  );
+  assert.equal(values.gruppe, "A");
+  assert.equal(values.ohneV, "");
+  assert.equal(values.ohneAP, "Yes");
+  assert.deepEqual(values.land, ["DE"]);
+  assert.deepEqual(
+    output
+      .getForm()
+      .getCheckBox("gruppe")
+      .acroField.getWidgets()
+      .map((widget) => widget.getAppearanceState().decodeText()),
+    ["A", "Off"],
+  );
+  const land = output.getForm().getDropdown("land");
+  assert.equal(land.acroField.dict.get(name("V")).decodeText(), "DE");
+  assert.deepEqual(
+    output
+      .getForm()
+      .getTextField("falschesP")
+      .acroField.getWidgets()
+      .map((widget) => widget.P()),
+    [output.getPage(0).ref],
+  );
+  const { data: flat } = await assemble({ ...payload, options: { flatten: true } });
+  const js = await pdfJs();
+  const task = js.getDocument({ data: flat, isEvalSupported: false });
+  try {
+    const page = await (await task.promise).getPage(2);
+    const text = (await page.getTextContent()).items.map((item) => item.str).join(" ");
+    assert.ok(text.includes("Deutschland"));
+  } finally {
+    await task.destroy();
+  }
+});
+async function styledForm() {
+  const doc = await lib.PDFDocument.create();
+  const page = doc.addPage([400, 400]);
+  const context = doc.context,
+    name = lib.PDFName.of;
+  const appearance = (content) =>
+    context.register(context.stream(content, { BBox: [0, 0, 100, 20], Subtype: name("Form") }));
+  const widget = (entries) => {
+    const ref = context.register(
+      context.obj({ Type: "Annot", Subtype: "Widget", P: page.ref, F: 4, ...entries }),
+    );
+    page.node.addAnnot(ref);
+    return ref;
+  };
+  const lower = widget({
+    FT: "Tx",
+    T: lib.PDFString.of("unten"),
+    Rect: [20, 20, 120, 40],
+    V: lib.PDFString.of("bleibt"),
+    AP: { N: appearance("% original unten") },
+  });
+  const upper = widget({
+    FT: "Tx",
+    T: lib.PDFString.of("oben"),
+    Rect: [200, 300, 300, 320],
+    Q: 2,
+    Ff: (1 << 24) | (1 << 13),
+    MaxLen: 6,
+    DA: lib.PDFString.of("/Helv 9 Tf 1 0 0 rg"),
+    MK: { BG: [0.9], BC: [0, 0, 1] },
+    V: lib.PDFString.of("alt"),
+    AP: { N: appearance("% original oben") },
+  });
+  const left = widget({
+    FT: "Tx",
+    T: lib.PDFString.of("links"),
+    Rect: [20, 300, 120, 320],
+  });
+  const stream = appearance("% original haken");
+  const box = widget({
+    FT: "Btn",
+    T: lib.PDFString.of("haken"),
+    Rect: [20, 200, 35, 215],
+    V: "Ja",
+    AS: "Ja",
+    AP: { N: { Ja: stream, Off: stream } },
+  });
+  widget({
+    FT: "Tx",
+    T: lib.PDFString.of("waise"),
+    Rect: [20, 100, 120, 120],
+    V: lib.PDFString.of("ohne Formular"),
+  });
+  const font = context.register(
+    context.obj({ Type: "Font", Subtype: "Type1", BaseFont: "Helvetica" }),
+  );
+  doc.catalog.set(
+    name("AcroForm"),
+    context.obj({
+      Fields: [lower, upper, left, box],
+      DA: lib.PDFString.of("/Helv 0 Tf 0 g"),
+      DR: { Font: { Helv: font } },
+    }),
+  );
+  return { doc, page };
+}
+test("Formularfelder liefern Stil, Tab-Reihenfolge und verwaiste Widgets", async () => {
+  const { doc, page } = await styledForm();
+  let info = await inspect(new Uint8Array(await doc.save({ updateFieldAppearances: false })));
+  assert.deepEqual(
+    info.pages[0].widgets.map((widget) => widget.name),
+    ["unten", "oben", "links", "haken", "waise"],
+  );
+  const upper = info.pages[0].widgets.find((widget) => widget.name === "oben");
+  assert.deepEqual(
+    {
+      align: upper.align,
+      comb: upper.comb,
+      password: upper.password,
+      fontSize: upper.fontSize,
+      color: upper.color,
+      background: upper.background,
+      border: upper.border,
+      maxLength: upper.maxLength,
+    },
+    {
+      align: "right",
+      comb: false,
+      password: true,
+      fontSize: 9,
+      color: "#ff0000",
+      background: "#e6e6e6",
+      border: "#0000ff",
+      maxLength: 6,
+    },
+  );
+  assert.equal(info.pages[0].widgets.find((widget) => widget.name === "waise").value, "ohne Formular");
+  assert.equal(info.pages[0].widgets.find((widget) => widget.name === "links").fontSize, null);
+  page.node.set(lib.PDFName.of("Tabs"), lib.PDFName.of("R"));
+  info = await inspect(new Uint8Array(await doc.save({ updateFieldAppearances: false })));
+  assert.deepEqual(
+    info.pages[0].widgets.map((widget) => widget.name),
+    ["links", "oben", "haken", "waise", "unten"],
+  );
+});
+test("Speichern erhält das Aussehen unveränderter Felder und erzeugt nur geänderte neu", async () => {
+  const { doc } = await styledForm();
+  const data = new Uint8Array(await doc.save({ updateFieldAppearances: false })),
+    info = await inspect(data);
+  const { data: saved } = await assemble({
+    fontBytes,
+    sources: [{ id: "source", data }],
+    document: {
+      pages: info.pages.map((page, i) => createPage("source", i, page, "group")),
+      formValues: { "group:oben": "neu" },
+    },
+    options: { plainGroup: "group" },
+  });
+  const output = await lib.PDFDocument.load(saved),
+    form = output.getForm(),
+    name = lib.PDFName.of;
+  const content = (field) => {
+    const normal = form.getField(field).acroField.getWidgets()[0].getAppearances().normal;
+    const stream = normal instanceof lib.PDFDict ? output.context.lookup(normal.get(name("Ja"))) : normal;
+    return Buffer.from(lib.decodePDFRawStream(stream).decode()).toString("latin1");
+  };
+  assert.equal(content("unten"), "% original unten");
+  assert.equal(content("haken"), "% original haken");
+  assert.notEqual(content("oben"), "% original oben");
+  assert.equal(form.getTextField("waise").getText(), "ohne Formular");
+  assert.ok(content("links").length > 0);
+  const resources = form.acroForm.dict.lookup(name("DR"), lib.PDFDict);
+  assert.ok(resources.lookup(name("Font"), lib.PDFDict).has(name("Helv")));
+  assert.equal(form.getTextField("unten").acroField.dict.lookup(name("DA")).decodeText(), "/Helv 0 Tf 0 g");
 });

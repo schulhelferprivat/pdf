@@ -986,12 +986,13 @@ async function renameRecent(entry, input) {
   void renderWelcomeRecent();
   return true;
 }
-function nameMenu(event, name, rename, close) {
+function nameMenu(event, name, rename, close, extra = []) {
   showContextMenu(event, {}, [
     contextItem("Umbenennen", false, async () => rename()),
     contextItem("Dateinamen kopieren", false, () =>
       copyContext({ text: name }),
     ),
+    ...extra,
     ...(close ? [contextItem("Schließen", false, async () => close())] : []),
   ]);
 }
@@ -2242,15 +2243,27 @@ function renderElements() {
     field.setSelectionRange(...caret);
   }
 }
+let pendingFieldFocus = null;
+const formControls = "input:not(:disabled), select:not(:disabled), textarea:not(:disabled)";
+function blankValue(value) {
+  return value == null || value === "" || (Array.isArray(value) && !value.length);
+}
+function choiceLabel(widget, value) {
+  const index = widget.options.indexOf(value);
+  return index < 0 ? value : (widget.labels?.[index] ?? value);
+}
 function updateFormControl(input, widget, value) {
-  if (widget.type === "checkbox") input.checked = !!value;
-  else if (widget.type === "radio") input.checked = value === widget.on;
+  if (widget.type === "checkbox" || widget.type === "radio")
+    input.checked = widget.on !== "" && value === widget.on;
+  else if (widget.type === "select" && widget.editable)
+    input.value = choiceLabel(widget, [value].flat()[0] ?? "");
   else if (widget.type === "select" || widget.type === "list") {
     for (const option of input.options)
       option.selected = Array.isArray(value)
         ? value.includes(option.value)
         : value === option.value;
   } else input.value = value ?? "";
+  input.classList.toggle("field-missing", widget.required && blankValue(value));
 }
 function renderForms() {
   $("form-layer").replaceChildren();
@@ -2262,15 +2275,32 @@ function renderForms() {
     if (widget.type === "unsupported") continue;
     const key = fieldKey(page, widget.name),
       value = doc.formValues[key] ?? widget.value;
+    const width = widget.rect[2] - widget.rect[0],
+      height = widget.rect[3] - widget.rect[1],
+      fontSize = widget.fontSize || Math.min(12, height * 0.72);
     let input;
-    if (widget.type === "select" || widget.type === "list") {
+    if (widget.type === "select" && widget.editable) {
+      input = document.createElement("input");
+      input.type = "text";
+      const list = document.createElement("datalist");
+      list.id = `form-options-${index}`;
+      widget.options.forEach((option, i) =>
+        list.append(new Option(widget.labels?.[i] ?? option)),
+      );
+      input.setAttribute("list", list.id);
+      $("form-layer").append(list);
+    } else if (widget.type === "select" || widget.type === "list") {
       input = document.createElement("select");
       input.multiple = widget.type === "list" && widget.multiSelect;
-      if (!input.multiple) input.add(new Option("", ""));
-      widget.options.forEach((option) => {
-        const entry = new Option(option, option);
+      if (widget.type === "list") input.size = Math.max(2, widget.options.length);
+      else input.add(new Option("", ""));
+      widget.options.forEach((option, i) => {
+        const entry = new Option(widget.labels?.[i] ?? option, option);
         input.add(entry);
       });
+      for (const entry of [value].flat())
+        if (entry && !widget.options.includes(entry))
+          input.add(new Option(entry, entry));
     } else if (widget.type === "text" && widget.multiline)
       input = document.createElement("textarea");
     else {
@@ -2280,7 +2310,9 @@ function renderForms() {
           ? "checkbox"
           : widget.type === "radio"
             ? "radio"
-            : "text";
+            : widget.password
+              ? "password"
+              : "text";
     }
     input.setAttribute("aria-label", widget.name);
     input.title = widget.name;
@@ -2288,6 +2320,7 @@ function renderForms() {
     input.dataset.widget = String(index);
     input.disabled = widget.readonly || tool !== "select";
     input.required = widget.required;
+    input.spellcheck = widget.spellcheck ?? true;
     if (widget.type === "text" && widget.maxLength)
       input.maxLength = widget.maxLength;
     if (widget.type === "radio") {
@@ -2297,34 +2330,26 @@ function renderForms() {
     updateFormControl(input, widget, value);
     controls.push({ input, widget, key });
     const [left, top] = displayPoint(page, widget.rect[0], widget.rect[3]);
-    const width = widget.rect[2] - widget.rect[0],
-      height = widget.rect[3] - widget.rect[1];
     input.style.left = `${left * scale}px`;
     input.style.top = `${top * scale}px`;
     input.style.width = `${width * scale}px`;
     input.style.height = `${height * scale}px`;
     input.style.transformOrigin = "0 0";
     input.style.transform = `rotate(${normalizeAngle((page.baseRotation || 0) + page.rotation)}deg)`;
-    input.style.fontSize = `${Math.min(12, height * 0.72) * scale}px`;
-    input.addEventListener("focus", () => {
-      if (selectedElement) {
-        selectedElement = null;
-        renderElements();
-        renderSettings();
-      }
-    });
-    input.addEventListener("change", () => {
-      if (input.disabled) return;
-      const next =
-        widget.type === "checkbox"
-          ? input.checked
-          : widget.type === "radio"
-            ? input.value
-            : widget.type === "select" || widget.type === "list"
-              ? [...input.selectedOptions]
-                  .map((option) => option.value)
-                  .filter(Boolean)
-              : input.value;
+    input.style.fontSize = `${fontSize * scale}px`;
+    input.style.textAlign = widget.align || "left";
+    if (widget.color) input.style.setProperty("--field-color", widget.color);
+    if (widget.background) input.style.setProperty("--field-bg", widget.background);
+    if (widget.border) input.style.setProperty("--field-border", widget.border);
+    if (widget.comb && widget.maxLength) {
+      const cell = (width * scale) / widget.maxLength,
+        spacing = Math.max(0, cell - fontSize * scale * 0.6);
+      input.classList.add("comb");
+      input.style.letterSpacing = `${spacing}px`;
+      input.style.paddingLeft = `${spacing / 2}px`;
+      input.style.textAlign = "left";
+    }
+    const commit = (next) => {
       edit(doc, "Formularfeld ausfüllen", () => {
         doc.formValues[key] = next;
       });
@@ -2334,9 +2359,146 @@ function renderForms() {
       for (const control of controls)
         if (control.key === key)
           updateFormControl(control.input, control.widget, next);
+    };
+    input.addEventListener("focus", () => {
+      if (selectedElement) {
+        selectedElement = null;
+        renderElements();
+        renderSettings();
+      }
+    });
+    if (widget.type === "radio" && widget.toggleOff) {
+      let wasChecked = false;
+      input.addEventListener("pointerdown", () => {
+        wasChecked = input.checked;
+      });
+      input.addEventListener("click", () => {
+        if (!wasChecked || input.disabled) return;
+        wasChecked = false;
+        input.checked = false;
+        commit("");
+      });
+    }
+    input.addEventListener("change", () => {
+      if (input.disabled) return;
+      if (widget.type === "select" && widget.editable) {
+        const index = widget.labels.indexOf(input.value);
+        commit(
+          input.value
+            ? [index < 0 ? input.value : widget.options[index]]
+            : [],
+        );
+        return;
+      }
+      commit(
+        widget.type === "checkbox"
+          ? input.checked
+            ? widget.on
+            : ""
+          : widget.type === "radio"
+            ? input.value
+            : widget.type === "select" || widget.type === "list"
+              ? [...input.selectedOptions]
+                  .map((option) => option.value)
+                  .filter(Boolean)
+              : input.value,
+      );
     });
     $("form-layer").append(input);
   }
+  if (pendingFieldFocus) {
+    const target = pendingFieldFocus([
+      ...$("form-layer").querySelectorAll(formControls),
+    ]);
+    pendingFieldFocus = null;
+    target?.focus();
+  }
+}
+$("form-layer").addEventListener("keydown", (event) => {
+  if (event.key !== "Tab" || event.altKey || event.ctrlKey || event.metaKey)
+    return;
+  const fields = [...$("form-layer").querySelectorAll(formControls)],
+    edge = event.shiftKey ? fields[0] : fields.at(-1);
+  if (
+    !edge ||
+    (event.target !== edge &&
+      !(event.target.type === "radio" && event.target.name === edge.name))
+  )
+    return;
+  const doc = active(),
+    step = event.shiftKey ? -1 : 1;
+  let index = doc.pages.findIndex((page) => page.id === doc.current) + step;
+  while (
+    index >= 0 &&
+    index < doc.pages.length &&
+    !(doc.pages[index].widgets || []).some(
+      (widget) => widget.type !== "unsupported" && !widget.readonly,
+    )
+  )
+    index += step;
+  if (index < 0 || index >= doc.pages.length) return;
+  event.preventDefault();
+  event.target.blur();
+  pendingFieldFocus = (inputs) => (event.shiftKey ? inputs.at(-1) : inputs[0]);
+  selectPage(doc.pages[index].id);
+});
+function missingRequired(doc) {
+  const missing = new Map();
+  for (const page of doc.pages)
+    for (const widget of page.widgets || []) {
+      const key = fieldKey(page, widget.name);
+      if (
+        widget.required &&
+        !widget.readonly &&
+        widget.type !== "unsupported" &&
+        !missing.has(key) &&
+        blankValue(doc.formValues[key] ?? widget.value)
+      )
+        missing.set(key, { page, widget });
+    }
+  return [...missing.values()];
+}
+async function confirmRequired(doc, acceptLabel) {
+  commitPendingInput();
+  const missing = doc?.kind === "pdf" ? missingRequired(doc) : [];
+  if (!missing.length) return true;
+  if (
+    await confirmAction(
+      "Pflichtfelder offen",
+      missing.length === 1
+        ? "Ein Pflichtfeld ist noch leer."
+        : `${missing.length} Pflichtfelder sind noch leer.`,
+      acceptLabel,
+    )
+  )
+    return true;
+  const [{ page, widget }] = missing;
+  pendingFieldFocus = (inputs) =>
+    inputs.find((input) => input.dataset.field === widget.name);
+  if (doc.current === page.id) renderForms();
+  else selectPage(page.id);
+  return false;
+}
+function resetForm(doc) {
+  if (!Object.keys(doc.formValues).length) return;
+  if (doc === active()) commitPendingInput();
+  edit(doc, "Formular zurücksetzen", () => {
+    doc.formValues = {};
+  });
+  if (doc === active()) changed();
+  else renderDocuments();
+}
+function resetFormItem(doc) {
+  return doc?.kind === "pdf" &&
+    doc.pages.some((page) => page.widgets?.length)
+    ? [
+        contextItem(
+          "Formular zurücksetzen",
+          !Object.keys(doc.formValues).length,
+          async () => resetForm(doc),
+        ),
+      ]
+    : [];
 }
 const toolStyles = {
   text: { color: "#354a63", fontSize: 16, returnToSelect: true },
@@ -3521,6 +3683,7 @@ document.addEventListener("contextmenu", (event) => {
         fileName(doc),
         () => editName(named, doc.name, (value) => renameDocument(doc, value)),
         () => closeDocument(doc),
+        resetFormItem(doc),
       );
     else if (contextRegion(event.target)) showContextMenu(event, {}, []);
     return;
@@ -3581,7 +3744,15 @@ document.addEventListener("contextmenu", (event) => {
     ]);
     return;
   }
+  const formControl = event.target.closest?.(
+    "#form-layer :is(input, select, textarea)",
+  );
   const field = editableField(event.target);
+  if (formControl && !field) {
+    const items = resetFormItem(active());
+    if (items.length) showContextMenu(event, {}, items);
+    return;
+  }
   if (field) {
     const start = field.selectionStart ?? field.value.length,
       end = field.selectionEnd ?? start,
@@ -3598,6 +3769,7 @@ document.addEventListener("contextmenu", (event) => {
         copyContext,
       ),
       contextItem("Einfügen", false, pasteContext),
+      ...(formControl ? resetFormItem(active()) : []),
     ]);
     return;
   }
@@ -4797,7 +4969,7 @@ async function writable(handle) {
 async function saveDocument({ choose = false } = {}) {
   const doc = active();
   if (!doc || doc.kind !== "pdf") return;
-  commitPendingInput();
+  if (!(await confirmRequired(doc, "Trotzdem speichern"))) return;
   let handle = choose ? null : doc.handle;
   if (!handle && !window.showSaveFilePicker) return openExport();
   if (!handle)
@@ -5042,6 +5214,7 @@ async function showLayout() {
 async function printDocument() {
   const doc = active();
   if (!doc?.pages.length) throw new Error("Bitte zuerst ein Dokument öffnen.");
+  if (!(await confirmRequired(doc, "Trotzdem drucken"))) return;
   const all = doc.selected.length <= 1;
   const groups = splitGroups(doc, all);
   await runJob("Drucken wird vorbereitet", async (job) => {
@@ -5109,7 +5282,15 @@ const actions = {
   },
   merge: mergeDocuments,
   split: () => openExport(true),
-  export: () => openExport(),
+  export: () => {
+    const doc = active();
+    commitPendingInput();
+    return doc?.kind === "pdf" && missingRequired(doc).length
+      ? confirmRequired(doc, "Trotzdem exportieren").then(
+          (confirmed) => confirmed && openExport(),
+        )
+      : openExport();
+  },
   "rotate-page": () => {
     const ids = selectedIds();
     rotatePages(90, ids.length ? ids : [active()?.current].filter(Boolean));

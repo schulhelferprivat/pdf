@@ -169,30 +169,46 @@ export class Renderer {
       const key = `${page.formGroup}:${widget.name}`;
       const value = document.formValues[key] ?? widget.value;
       const rect = displayRect(page, widget.rect);
-      ctx.fillStyle = darkMode ? "#202329" : "#fff";
+      ctx.fillStyle = darkMode ? "#202329" : widget.background || "#fff";
       ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
       ctx.save();
       ctx.beginPath();
       ctx.rect(rect.x, rect.y, rect.width, rect.height);
       ctx.clip();
-      ctx.fillStyle = darkMode ? "#e8edf2" : "#111";
-      ctx.font = `${Math.min(12, rect.height * 0.7)}px Noto`;
+      ctx.fillStyle = darkMode ? "#e8edf2" : widget.color || "#111";
+      const size = widget.fontSize || Math.min(12, rect.height * 0.7);
+      ctx.font = `${size}px Noto`;
+      ctx.textAlign = widget.align || "left";
+      const textX =
+        widget.align === "center"
+          ? rect.x + rect.width / 2
+          : widget.align === "right"
+            ? rect.x + rect.width - 2
+            : rect.x + 2;
       if (widget.type === "checkbox" || widget.type === "radio") {
         ctx.strokeStyle = "#777";
         ctx.strokeRect(rect.x + 1, rect.y + 1, rect.width - 2, rect.height - 2);
-        if (widget.type === "checkbox" ? value : value === widget.on)
+        ctx.textAlign = "left";
+        if (widget.on !== "" && value === widget.on)
           ctx.fillText("✓", rect.x + 2, rect.y + rect.height * 0.8);
       } else {
         const text = Array.isArray(value)
-          ? value.join(", ")
-          : String(value ?? "");
+          ? value
+              .map((entry) => {
+                const index = widget.options?.indexOf(entry) ?? -1;
+                return index < 0 ? entry : (widget.labels?.[index] ?? entry);
+              })
+              .join(", ")
+          : widget.password
+            ? "•".repeat(String(value ?? "").length)
+            : String(value ?? "");
         text
           .split("\n")
           .forEach((line, i) =>
             ctx.fillText(
               line,
-              rect.x + 2,
-              rect.y + Math.min(12, rect.height * 0.75) + i * 14,
+              textX,
+              rect.y + Math.min(size * 1.05, rect.height * 0.75) + i * size * 1.2,
             ),
           );
       }

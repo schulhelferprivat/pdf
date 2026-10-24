@@ -1151,6 +1151,7 @@ test(
       checkbox.addToPage(first, { x: 30, y: 380, width: 20, height: 20 });
       checkbox.addToPage(first, { x: 80, y: 380, width: 20, height: 20 });
       const radio = form.createRadioGroup("Wahl");
+      radio.disableOffToggling();
       radio.addOptionToPage("A", first, {
         x: 30,
         y: 340,
@@ -1214,9 +1215,9 @@ test(
         ).color,
       })),
       {
-        color: "rgb(17, 17, 17)",
+        color: "rgb(0, 0, 0)",
         background: "rgb(255, 255, 255)",
-        readonlyColor: "rgb(17, 17, 17)",
+        readonlyColor: "rgb(0, 0, 0)",
       },
     );
     await key("a", "KeyA", 65, commandModifier);
@@ -2132,6 +2133,7 @@ test(
       items: [
         { label: "Kopieren", disabled: true },
         { label: "Einfügen", disabled: false },
+        { label: "Formular zurücksetzen", disabled: true },
       ],
     });
     await b.command("Input.dispatchKeyEvent", {
@@ -5373,6 +5375,204 @@ test(
       { text: "Bitte Absatz prüfen", page: "S. 1", done: true, selected: false },
     ]);
     assert.equal(current.pins[0].done, true);
+    assert.deepEqual(b.errors, []);
+  },
+);
+test(
+  "Browser: Formulare mit Pflichtfeldern, Tab über Seiten, Zurücksetzen und freien Eingaben",
+  { timeout: 120000 },
+  async (t) => {
+    const b = await browser(t);
+    async function press(key, code, windowsVirtualKeyCode, modifiers = 0) {
+      for (const type of ["keyDown", "keyUp"])
+        await b.command("Input.dispatchKeyEvent", {
+          type,
+          key,
+          code,
+          windowsVirtualKeyCode,
+          modifiers,
+        });
+    }
+    async function click(selector, index = 0) {
+      const point = await b.evaluate(
+        ({ selector, index }) => {
+          const node = document.querySelectorAll(selector)[index];
+          node.scrollIntoView({ block: "nearest", inline: "nearest" });
+          const rect = node.getBoundingClientRect();
+          return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+        },
+        { selector, index },
+      );
+      for (const type of ["mousePressed", "mouseReleased"])
+        await b.command("Input.dispatchMouseEvent", {
+          type,
+          ...point,
+          button: "left",
+          clickCount: 1,
+        });
+    }
+    const field = (name) => `#form-layer [data-field="${name}"]`;
+    await b.evaluate(async () => {
+      const { pdfLib } = await import("./src/pdf/vendors.js");
+      const lib = await pdfLib();
+      const pdf = await lib.PDFDocument.create();
+      const first = pdf.addPage([400, 600]),
+        second = pdf.addPage([400, 600]);
+      const form = pdf.getForm();
+      const name = form.createTextField("Name");
+      name.enableRequired();
+      name.addToPage(first, { x: 30, y: 540, width: 160, height: 24 });
+      const secret = form.createTextField("Kennwort");
+      secret.enablePassword();
+      secret.addToPage(first, { x: 30, y: 500, width: 160, height: 24 });
+      const radio = form.createRadioGroup("Ampel");
+      radio.addOptionToPage("Rot", first, { x: 30, y: 460, width: 20, height: 20 });
+      radio.addOptionToPage("Gruen", first, { x: 80, y: 460, width: 20, height: 20 });
+      const country = form.createDropdown("Land");
+      country.addOptions(["Deutschland", "Schweiz"]);
+      country.enableEditing();
+      country.addToPage(first, { x: 30, y: 410, width: 160, height: 24 });
+      const city = form.createTextField("Ort");
+      city.setText("Berlin");
+      city.addToPage(first, { x: 30, y: 370, width: 160, height: 24 });
+      form.createTextField("Weiter").addToPage(second, { x: 30, y: 540, width: 160, height: 24 });
+      const transfer = new DataTransfer();
+      transfer.items.add(
+        new File([await pdf.save()], "Verhalten.pdf", { type: "application/pdf" }),
+      );
+      const input = document.querySelector("#file-input");
+      input.files = transfer.files;
+      input.dispatchEvent(new Event("change"));
+    });
+    await b.wait(
+      () =>
+        document.querySelectorAll("#form-layer [data-field]").length === 6 &&
+        document.querySelector("#page-loading").hidden,
+    );
+    assert.deepEqual(
+      await b.evaluate(() => ({
+        order: [...document.querySelectorAll("#form-layer [data-field]")].map(
+          (input) => input.dataset.field,
+        ),
+        password: document.querySelector('[data-field="Kennwort"]').type,
+        list: !!document.querySelector('[data-field="Land"]').list,
+        missing: document
+          .querySelector('[data-field="Name"]')
+          .classList.contains("field-missing"),
+        tint: getComputedStyle(document.querySelector('[data-field="Ort"]'))
+          .backgroundImage,
+      })),
+      {
+        order: ["Name", "Kennwort", "Ampel", "Ampel", "Land", "Ort"],
+        password: "password",
+        list: true,
+        missing: true,
+        tint: "linear-gradient(rgba(90, 169, 240, 0.12), rgba(90, 169, 240, 0.12))",
+      },
+    );
+    await click(field("Ampel"));
+    assert.equal(await b.evaluate(() => document.querySelector('[data-field="Ampel"]').checked), true);
+    await click(field("Ampel"));
+    assert.equal(await b.evaluate(() => document.querySelector('[data-field="Ampel"]').checked), false);
+    await b.evaluate(() => {
+      for (const [name, value] of [
+        ["Land", "Freiland"],
+        ["Ort", "Hamburg"],
+      ]) {
+        const input = document.querySelector(`[data-field="${name}"]`);
+        input.value = value;
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+    await click(field("Ort"));
+    await press("Tab", "Tab", 9);
+    await b.wait(
+      () =>
+        document.querySelector("#current-page").value === "2" &&
+        document.activeElement?.dataset.field === "Weiter",
+    );
+    await press("Tab", "Tab", 9, 8);
+    await b.wait(
+      () =>
+        document.querySelector("#current-page").value === "1" &&
+        document.activeElement?.dataset.field === "Ort",
+    );
+    await b.evaluate(() => {
+      const input = document.querySelector('[data-field="Ort"]'),
+        rect = input.getBoundingClientRect();
+      input.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          clientX: rect.x + 4,
+          clientY: rect.y + 4,
+        }),
+      );
+      [...document.querySelectorAll("#context-menu button")]
+        .find((button) => button.textContent === "Formular zurücksetzen")
+        .click();
+    });
+    await b.wait(
+      () =>
+        document.querySelector('[data-field="Ort"]').value === "Berlin" &&
+        document.querySelector('[data-field="Land"]').value === "",
+    );
+    await b.evaluate(() => document.querySelector("#undo-button").click());
+    await b.wait(
+      () =>
+        document.querySelector('[data-field="Ort"]').value === "Hamburg" &&
+        document.querySelector('[data-field="Land"]').value === "Freiland",
+    );
+    await b.evaluate(() => document.querySelector("[data-action=export]").click());
+    await b.wait(() => document.querySelector("#confirm-dialog").open);
+    assert.equal(
+      await b.evaluate(() => document.querySelector("#confirm-message").textContent),
+      "Ein Pflichtfeld ist noch leer.",
+    );
+    await b.evaluate(() =>
+      document.querySelector('#confirm-dialog [value="cancel"]').click(),
+    );
+    await b.wait(
+      () =>
+        !document.querySelector("#confirm-dialog").open &&
+        document.activeElement?.dataset.field === "Name",
+    );
+    await b.evaluate(() => {
+      const input = document.querySelector('[data-field="Name"]');
+      input.value = "Erika";
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      window.downloads = [];
+      HTMLAnchorElement.prototype.click = function () {
+        if (this.download) window.downloads.push(this.href);
+      };
+      document.querySelector("[data-action=export]").click();
+      document.querySelector("#export-form").requestSubmit();
+    });
+    assert.equal(await b.evaluate(() => document.querySelector('[data-field="Name"]').classList.contains("field-missing")), false);
+    await b.wait(() => window.downloads?.length === 1);
+    const values = await b.evaluate(async () => {
+      const { pdfLib } = await import("./src/pdf/vendors.js");
+      const lib = await pdfLib();
+      const form = (
+        await lib.PDFDocument.load(
+          new Uint8Array(await (await fetch(window.downloads[0])).arrayBuffer()),
+        )
+      ).getForm();
+      const find = (name) =>
+        form.getFields().find((entry) => entry.getName().split(".").at(-1) === name);
+      return {
+        name: find("Name").getText(),
+        city: find("Ort").getText(),
+        country: find("Land").acroField.getValues().map((value) => value.decodeText()),
+        radio: find("Ampel").getSelected() ?? null,
+      };
+    });
+    assert.deepEqual(values, {
+      name: "Erika",
+      city: "Hamburg",
+      country: ["Freiland"],
+      radio: null,
+    });
     assert.deepEqual(b.errors, []);
   },
 );

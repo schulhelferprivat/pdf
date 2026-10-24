@@ -1,5 +1,10 @@
 import { pdfLib, fontkit } from "./vendors.js";
-import { inspectFields, applyValues, transplantForms } from "./forms.js";
+import {
+  inspectFields,
+  applyValues,
+  transplantForms,
+  adoptOrphanWidgets,
+} from "./forms.js";
 import { impose } from "./layout.js";
 import { limits, normalizeAngle, displayedSize } from "../core/model.js";
 import { pagePoint } from "../core/geometry.js";
@@ -35,6 +40,7 @@ export async function inspect(data, password = "") {
   const count = source.getPageCount();
   if (count < 1 || count > limits.pages)
     throw new Error(`Erlaubt sind 1 bis ${limits.pages} Seiten pro Dokument.`);
+  adoptOrphanWidgets(lib, source);
   const widgets = inspectFields(lib, source);
   const encryption = !!password || !!source.context.trailerInfo.Encrypt;
   const elements =
@@ -539,14 +545,8 @@ export async function assemble(payload, progress = () => {}) {
       preserveXFA: true,
       updateMetadata: false,
     });
+    adoptOrphanWidgets(lib, source);
     applyValues(lib, source, payload.document.formValues, entries[0].formGroup);
-    source.registerFontkit(await fontkit());
-    const sourceFont = await source.embedFont(
-      (payload.fontBytes || (await fontsPromise))[0],
-      { subset: true },
-    );
-    if (source.getForm().getFields().length)
-      source.getForm().updateFieldAppearances(sourceFont);
     const copier = lib.PDFObjectCopier.for(source.context, output.context);
     const mappings = [];
     for (const page of entries) {
@@ -604,6 +604,11 @@ export async function assemble(payload, progress = () => {}) {
         : entries[0].formGroup,
       copier,
       font.regular,
+      new Set(
+        Object.keys(payload.document.formValues)
+          .filter((key) => key.startsWith(`${entries[0].formGroup}:`))
+          .map((key) => key.slice(`${entries[0].formGroup}:`.length)),
+      ),
     );
   }
   for (const page of selected) {
