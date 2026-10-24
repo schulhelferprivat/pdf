@@ -4040,6 +4040,51 @@ function textSelection() {
     ? range
     : null;
 }
+function adjustTextSelection(key) {
+  const range = textSelection();
+  if (!range) return false;
+  const layer = $("text-layer"),
+    nodes = [],
+    lineEnds = [],
+    walker = document.createTreeWalker(
+      layer,
+      NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
+    ),
+    offsetOf = (container, offset) => {
+      const probe = document.createRange();
+      probe.setStart(layer, 0);
+      probe.setEnd(container, offset);
+      return probe.toString().length;
+    };
+  let total = 0;
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    if (node.nodeType === Node.TEXT_NODE) {
+      nodes.push({ node, start: total });
+      total += node.length;
+    } else if (node.tagName === "BR") lineEnds.push(total);
+  }
+  lineEnds.push(total);
+  const start = offsetOf(range.startContainer, range.startOffset),
+    end = offsetOf(range.endContainer, range.endOffset);
+  let target = end;
+  if (key === "ArrowRight") target = Math.min(total, end + 1);
+  else if (key === "ArrowLeft") target = end - 1;
+  else if (key === "ArrowDown")
+    target = lineEnds.find((position) => position > end) ?? end;
+  else if (key === "ArrowUp")
+    target = lineEnds.findLast((position) => position < end) ?? end;
+  if (target <= start || target === end) return true;
+  const entry = nodes.find((item) => target <= item.start + item.node.length);
+  if (!entry) return true;
+  getSelection().setBaseAndExtent(
+    range.startContainer,
+    range.startOffset,
+    entry.node,
+    target - entry.start,
+  );
+  return true;
+}
 function selectionRects(range) {
   const rects = [],
     walker = document.createTreeWalker($("text-layer"), NodeFilter.SHOW_TEXT);
@@ -5164,6 +5209,16 @@ document.addEventListener("keydown", (event) => {
     return;
   if (document.querySelector("dialog[open]")) return;
   if (active()?.kind === "epub" && !((event.ctrlKey || event.metaKey) && key === "o")) return;
+  if (
+    (event.ctrlKey || event.metaKey) &&
+    !event.altKey &&
+    !event.shiftKey &&
+    ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key) &&
+    adjustTextSelection(event.key)
+  ) {
+    event.preventDefault();
+    return;
+  }
   if ((event.ctrlKey || event.metaKey) && ["o", "z", "y"].includes(key)) {
     event.preventDefault();
     const action =
