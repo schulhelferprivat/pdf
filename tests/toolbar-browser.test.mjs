@@ -386,7 +386,7 @@ test("Browser: Toolbars mit simulierten Fensterbuttons blenden vollständig aus 
   assert.deepEqual(b.errors, []);
 });
 
-test("Browser: Windows-Toolbar bleibt ziehbar und unterdrückt App-Kontextmenüs", { timeout: 60000 }, async (t) => {
+test("Browser: Windows-Toolbar bleibt ziehbar und öffnet eigene Kontextmenüs", { timeout: 60000 }, async (t) => {
   const b = await browser(t, { toolbarPinned: true });
   const css = await readFile(new URL("../src/ui/app.css", import.meta.url), "utf8");
   b.override("src/ui/app.css", css.replaceAll("(display-mode: window-controls-overlay)", "(min-width: 0px)"));
@@ -397,27 +397,42 @@ test("Browser: Windows-Toolbar bleibt ziehbar und unterdrückt App-Kontextmenüs
   await b.navigate();
   await b.wait(() => document.querySelector("#editor-topbar")?.dataset.pinned === "true");
   await openBlankDocument(b);
-  for (const selector of [".toolbar-frame", "#editor-topbar", "#save-button", '[data-tool="select"] .icon', "#document-title"]) {
+  await b.evaluate(() => {
+    window.toolbarContextEvents = [];
+    window.addEventListener("contextmenu", (event) => window.toolbarContextEvents.push(event.defaultPrevented));
+  });
+  for (const selector of ["#save-button", '[data-tool="select"] .icon', "#document-title"]) {
     const point = await b.evaluate((selector) => {
       const rect = document.querySelector(selector).getBoundingClientRect();
-      return selector === "#editor-topbar" ? { x: rect.right - 3, y: rect.bottom - 3 }
-        : { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+      return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
     }, selector);
     await move(b, point.x, point.y);
     for (const type of ["mousePressed", "mouseReleased"])
       await b.command("Input.dispatchMouseEvent", { type, ...point, button: "right", clickCount: 1 });
-    assert.equal(await b.evaluate(() => document.querySelector("#context-menu").matches(":popover-open")), false, selector);
+    assert.equal(await b.evaluate(() => document.querySelector("#context-menu").matches(":popover-open")), true, selector);
+    assert.deepEqual(await b.evaluate(() => [...document.querySelectorAll("#context-menu button")].map((button) => button.textContent)),
+      selector === "#document-title" ? ["Umbenennen", "Dateinamen kopieren", "Schließen", "Toolbar entpinnen"] : ["Toolbar entpinnen"], selector);
+    for (const type of ["keyDown", "keyUp"])
+      await b.command("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
   }
+  assert.deepEqual(await b.evaluate(() => window.toolbarContextEvents), [true, true, true]);
   await b.evaluate(() => document.querySelector("#editor-topbar").focus());
   for (const [key, code, windowsVirtualKeyCode, modifiers] of [["ContextMenu", "ContextMenu", 93, 0], ["F10", "F10", 121, 8]]) {
     for (const type of ["keyDown", "keyUp"])
       await b.command("Input.dispatchKeyEvent", { type, key, code, windowsVirtualKeyCode, modifiers });
-    assert.equal(await b.evaluate(() => document.querySelector("#context-menu").matches(":popover-open")), false, key);
+    assert.equal(await b.evaluate(() => document.querySelector("#context-menu").matches(":popover-open")), true, key);
+    assert.equal(await b.evaluate(() => document.activeElement.dataset.action), "pin-toolbar", key);
+    for (const type of ["keyDown", "keyUp"])
+      await b.command("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+    assert.equal(await b.evaluate(() => document.activeElement.id), "editor-topbar", key);
   }
   assert.deepEqual(await b.evaluate(() => [".toolbar-frame", "#editor-topbar"].map((selector) =>
     getComputedStyle(document.querySelector(selector)).getPropertyValue("app-region"))), ["drag", "drag"]);
   assert.equal(await b.evaluate(() => [...document.querySelectorAll("#editor-topbar :is(button, input, label, select, [role=menu])")]
     .every((element) => getComputedStyle(element).getPropertyValue("app-region") === "no-drag")), true);
+  assert.equal(await togglePin(b, "toolbar"), "Toolbar entpinnen");
+  assert.equal(await b.evaluate(() => document.querySelector("#editor-topbar").dataset.pinned), "false");
+  assert.equal(await togglePin(b, "toolbar"), "Toolbar anpinnen");
   await togglePin(b, "sidebar");
   assert.equal(await b.evaluate(() => document.querySelector("#pages-panel").dataset.pinned), "false");
   assert.deepEqual(b.errors, []);
