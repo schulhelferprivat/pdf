@@ -57,6 +57,7 @@ import { setHidden, setupDisclosures, fadeContent, cancelContentFade, holdEntran
 import { setupPanelResizing } from "./ui/panels.js";
 import { setupToolbar } from "./ui/toolbar.js";
 import { setupSidebar } from "./ui/sidebar.js";
+import { setupTableSelection } from "./ui/tables.js";
 import { readPdfDark, writePdfDark } from "./ui/settings.js";
 const $ = (id) => document.getElementById(id);
 const sources = new Map(),
@@ -88,6 +89,16 @@ const current = () =>
   active()?.pages.find((page) => page.id === active().current);
 const element = () =>
   current()?.elements.find((el) => el.id === selectedElement);
+const tableSelection = setupTableSelection($("page-stage"), {
+  page: current,
+  scale: () => scale,
+  tool: () => tool,
+  onSelect: () => {
+    selectedElement = null;
+    renderElements();
+    renderSettings();
+  },
+});
 installIcons();
 $("pdf-dark-button").setAttribute("aria-pressed", String(pdfDark));
 $("page-flow").classList.toggle("pdf-dark", pdfDark);
@@ -1669,6 +1680,7 @@ async function renderPage({ animate = false, preserveNavigation = false } = {}) 
   cancelContentFade($("page-stage"));
   cancelContentFade($("welcome"));
   renderer.cancelMain();
+  tableSelection.reset();
   textLayer?.cancel();
   textLayer = null;
   $("text-layer").replaceChildren();
@@ -1815,6 +1827,12 @@ async function renderTextLayer(page, generation) {
   container.addEventListener("pointerdown", () =>
     container.classList.add("selecting"),
   );
+  let rules = [];
+  try {
+    rules = await renderer.tableRules(page);
+  } catch {}
+  if (generation !== renderGeneration) return;
+  tableSelection.render(layer, rules);
   applySearchHighlights();
 }
 const search = {
@@ -2019,13 +2037,13 @@ function openSearch() {
   if (!current()) return;
   const input = $("search-input"),
     selection = getSelection(),
-    selected = selection?.toString().trim() ?? "",
+    selected = (tableSelection.selection?.text ?? selection?.toString() ?? "").trim(),
     wasOpen = searchOpen();
   let refill = false;
   if (
     selected &&
     !selected.includes("\n") &&
-    $("text-layer").contains(selection.anchorNode)
+    (tableSelection.selection || $("text-layer").contains(selection.anchorNode))
   ) {
     refill = normalizeQuery(selected) !== normalizeQuery(input.value);
     input.value = selected;
@@ -3807,10 +3825,10 @@ document.addEventListener("contextmenu", (event) => {
     return;
   }
   const selection = getSelection(),
-    text = selection?.toString() ?? "";
+    text = tableSelection.selection?.text ?? selection?.toString() ?? "";
   if (
     text.trim() &&
-    $("page-stage").contains(selection.anchorNode) &&
+    (tableSelection.selection || $("page-stage").contains(selection.anchorNode)) &&
     !$("page-stage").hidden
   )
     showContextMenu(event, { text }, [
@@ -3861,7 +3879,10 @@ window.addEventListener("scroll", () => closeContextMenu(), true);
 window.addEventListener("resize", () => closeContextMenu());
 window.addEventListener("blur", () => closeContextMenu());
 function setTool(value) {
-  const pending = value === "highlight" ? textSelection() : null;
+  const pending = value === "highlight"
+    ? tableSelection.selection?.ranges ?? textSelection()
+    : null;
+  tableSelection.clear();
   finishTextEdit();
   tool = value;
   selectedElement = null;
@@ -4309,7 +4330,7 @@ function highlightRange(range) {
   const stage = $("page-stage").getBoundingClientRect(),
     size = displayedSize(page),
     rects = lineRects(
-      selectionRects(range).map((rect) => {
+      (Array.isArray(range) ? range.flatMap(selectionRects) : selectionRects(range)).map((rect) => {
         const left = Math.max(0, (rect.left - stage.left) / scale),
           top = Math.max(0, (rect.top - stage.top) / scale),
           right = Math.min(size.width, (rect.right - stage.left) / scale),

@@ -19,7 +19,7 @@ async function settled(b, visible) {
   }, 30000, visible);
 }
 
-async function click(b, selector) {
+async function click(b, selector, clickCount = 1) {
   const point = await b.evaluate((selector) => {
     const rect = document.querySelector(selector).getBoundingClientRect();
     return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
@@ -27,7 +27,7 @@ async function click(b, selector) {
   await move(b, point.x, point.y);
   for (const type of ["mousePressed", "mouseReleased"])
     await b.command("Input.dispatchMouseEvent", {
-      type, ...point, button: "left", clickCount: 1,
+      type, ...point, button: "left", clickCount,
     });
 }
 
@@ -255,12 +255,24 @@ test("Browser: Toolbar blendet auch beim Wechsel in den EPUB-Buchinhalt aus", { 
   assert.deepEqual(b.errors, []);
 });
 
-test("Browser: Simulierte macOS- und Windows-Fensterbereiche bleiben stationär", { timeout: 60000 }, async (t) => {
+test("Browser: Simulierte macOS- und Windows-Toolbars blenden vollständig aus und bleiben ziehbar", { timeout: 60000 }, async (t) => {
   const b = await browser(t);
   const css = await readFile(new URL("../src/ui/app.css", import.meta.url), "utf8");
   b.override("src/ui/app.css", css.replaceAll("(display-mode: window-controls-overlay)", "(min-width: 0px)"));
   await b.navigate();
   await b.wait(() => !!document.querySelector("#editor-topbar")?.dataset.pinned);
+  await openBlankDocument(b);
+  async function assertRegions() {
+    assert.deepEqual(await b.evaluate(() => [".toolbar-frame", "#editor-topbar"].map((selector) => {
+      const style = getComputedStyle(document.querySelector(selector));
+      return { drag: style.getPropertyValue("app-region"), selection: style.userSelect };
+    })), [
+      { drag: "drag", selection: "none" },
+      { drag: "drag", selection: "none" },
+    ]);
+    assert.equal(await b.evaluate(() => [...document.querySelectorAll("#editor-topbar :is(button, input, label, select, [role=menu])")]
+      .every((element) => getComputedStyle(element).getPropertyValue("app-region") === "no-drag")), true);
+  }
   for (const [left, right] of [[80, 0], [0, 140]]) {
     await b.evaluate(({ left, right }) => {
       const style = document.documentElement.style;
@@ -270,17 +282,33 @@ test("Browser: Simulierte macOS- und Windows-Fensterbereiche bleiben stationär"
     }, { left, right });
     await move(b, 500, 300);
     await settled(b, false);
-    assert.equal((await geometry(b)).top, 32);
-    assert.equal(await b.evaluate(() => getComputedStyle(document.querySelector(".toolbar-frame")).getPropertyValue("app-region")), "drag");
+    const hiddenGeometry = await geometry(b);
+    assert.equal(hiddenGeometry.top, 0);
+    assert.deepEqual(await b.evaluate(() => ({
+      frameHeight: document.querySelector(".toolbar-frame").getBoundingClientRect().height,
+      toolbarBottom: document.querySelector("#editor-topbar").getBoundingClientRect().bottom,
+      hitToolbar: !!document.elementFromPoint(500, 10)?.closest(".toolbar-frame"),
+    })), { frameHeight: 0, toolbarBottom: 0, hitToolbar: false });
+    await assertRegions();
     await move(b, 500, 50);
     await move(b, 500, 5);
     await settled(b, true);
-    assert.equal((await geometry(b)).top, 32);
-    assert.equal(await b.evaluate(() => getComputedStyle(document.querySelector(".toolbar-frame")).getPropertyValue("app-region")), "no-drag");
-    assert.equal(await b.evaluate(() => getComputedStyle(document.querySelector("#editor-topbar")).getPropertyValue("app-region")), "no-drag");
+    assert.deepEqual(await geometry(b), hiddenGeometry);
+    await assertRegions();
+    await click(b, '[data-tool="text"]');
+    assert.equal(await b.evaluate(() => document.querySelector('[data-tool="text"]').getAttribute("aria-pressed")), "true");
+    await click(b, '[data-tool="select"]');
+    for (const count of [1, 2]) await click(b, "#document-title", count);
+    await b.wait(() => !!document.querySelector("#editor-topbar .name-editor"));
+    await assertRegions();
+    assert.equal(await b.evaluate(() => getComputedStyle(document.querySelector("#editor-topbar .name-editor")).userSelect), "text");
+    await b.command("Input.insertText", { text: "Umbenannt" });
+    for (const type of ["keyDown", "keyUp"])
+      await b.command("Input.dispatchKeyEvent", { type, key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+    await b.wait(() => document.querySelector("#document-title .document-title-name").textContent === "Umbenannt" && !document.querySelector(".name-editor"));
     const point = await b.evaluate(() => {
-      const rect = document.querySelector("#editor-topbar").getBoundingClientRect();
-      return { x: rect.x + rect.width / 2, y: rect.bottom - 3 };
+      const rect = document.querySelector('[data-tool="select"]').getBoundingClientRect();
+      return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
     });
     await move(b, point.x, point.y);
     for (const type of ["mousePressed", "mouseReleased"])
@@ -297,7 +325,12 @@ test("Browser: Simulierte macOS- und Windows-Fensterbereiche bleiben stationär"
     await move(b, 500, 300);
     await settled(b, true);
     assert.equal((await geometry(b)).top, 43);
+    await assertRegions();
     await togglePin(b, "toolbar");
+    await move(b, 500, 300);
+    await settled(b, false);
+    assert.equal((await geometry(b)).top, 0);
+    assert.equal(await b.evaluate(() => document.querySelector(".toolbar-frame").getBoundingClientRect().height), 0);
     await b.command("Emulation.setDeviceMetricsOverride", { width: 320, height: 960, deviceScaleFactor: 1, mobile: false });
     await move(b, 150, 50);
     await settled(b, true);

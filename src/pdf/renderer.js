@@ -8,7 +8,8 @@ import {
   fitFontSize,
   wrapText,
 } from "../core/geometry.js";
-import { generateOutline } from "./outline.js";
+import { destinationIndex, generateOutline } from "./outline.js";
+import { extractTableRules } from "./table-rules.js";
 import { darkenCanvas, darkTextColor } from "./dark.js";
 export class Renderer {
   constructor(sources, assets) {
@@ -317,6 +318,12 @@ export class Renderer {
       }),
     });
   }
+  async tableRules(page) {
+    if (!page.sourceId) return [];
+    const lib = await pdfJs();
+    const { sourcePage } = await this.sourcePage(page);
+    return extractTableRules(await sourcePage.getOperatorList(), lib.OPS);
+  }
   pageText(page) {
     if (!page.sourceId) return Promise.resolve(null);
     const key = `${page.sourceId}:${page.index}`;
@@ -375,13 +382,7 @@ export class Renderer {
     }
   }
   async destinationIndex(pdf, value) {
-    const dest =
-      typeof value === "string"
-        ? await pdf.getDestination(value).catch(() => null)
-        : value;
-    if (!Array.isArray(dest)) return null;
-    if (Number.isInteger(dest[0])) return dest[0];
-    return pdf.getPageIndex(dest[0]).catch(() => null);
+    return destinationIndex(pdf, value);
   }
   outline(sourceId) {
     if (!this.outlines.has(sourceId))

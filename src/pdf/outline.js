@@ -8,6 +8,17 @@ function validTitle(title) {
     !/\.{3}|…|[.!?;]$/u.test(title);
 }
 
+export async function destinationIndex(pdf, value) {
+  try {
+    const dest = typeof value === "string" ? await pdf.getDestination(value) : value;
+    if (!Array.isArray(dest) || !dest.length) return null;
+    const index = Number.isInteger(dest[0]) ? dest[0] : await pdf.getPageIndex(dest[0]);
+    return Number.isInteger(index) && index >= 0 && index < pdf.numPages ? index : null;
+  } catch {
+    return null;
+  }
+}
+
 function readPage(content, viewport, index) {
   const fragments = [], marked = new Map(), stack = [];
   for (const item of content.items) {
@@ -87,6 +98,145 @@ function isRepeated(line, repeated) {
   return (line.y <= line.height * 0.12 || line.y >= line.height * 0.88) && repeated.has(edgeKey(line));
 }
 
+function contentsTitle(text) {
+  return /^(?:\d+[.)]?\s+)?(?:inhaltsverzeichnis|inhalt|table of contents|contents)(?:\s*[:–—-]?\s*\(?(?:fortsetzung|continued)\)?)?$/iu.test(text);
+}
+
+function chapterNumber(text) {
+  return /^(\d+(?:\.\d+)*)(?:[.)])?\s+\p{L}/u.exec(text)?.[1];
+}
+
+function pageLabel(line) {
+  if (/(?:[.·…⋯]\s*){2,}(?:\d+|[ivxlcdm]+)\s*$/iu.test(line.text)) return true;
+  const last = line.fragments.at(-1), previous = line.fragments.at(-2);
+  return !!previous && /^(?:\d+|[ivxlcdm]+)$/iu.test(last.text.trim()) &&
+    last.x - previous.right >= line.size;
+}
+
+function linkedTitle(lines) {
+  let text = titleText(lines.map((line) => line.text).join(" "));
+  if (pageLabel(lines.at(-1))) text = text.replace(/\s*(?:[.·…⋯]\s*)*(?:\d+|[ivxlcdm]+)\s*$/iu, "").trim();
+  return text.replace(/\s*(?:[.·…⋯]\s*){2,}$/u, "").trim();
+}
+
+function wrapsLine(previous, next) {
+  return !contentsTitle(previous.text) && !contentsTitle(next.text) &&
+    !pageLabel(previous) && !chapterNumber(next.text) &&
+    Math.abs(previous.size - next.size) <= 0.5 &&
+    next.y - previous.y <= previous.size * 1.5 &&
+    Math.abs(previous.x - next.x) <= previous.size * 2;
+}
+
+async function linkedEntries(pdf, page, data, viewport) {
+  const targets = data.lines.map(() => new Set());
+  const links = data.lines.map(() => new Set());
+  const annotations = await page.getAnnotations({ intent: "display" }).catch(() => []);
+  for (const annotation of annotations) {
+    if (annotation.subtype !== "Link" ||
+      !Array.isArray(annotation.rect) || annotation.rect.length !== 4 ||
+      !annotation.rect.every(Number.isFinite)) continue;
+    const [x1, y1] = viewport.convertToViewportPoint(annotation.rect[0], annotation.rect[1]);
+    const [x2, y2] = viewport.convertToViewportPoint(annotation.rect[2], annotation.rect[3]);
+    const left = Math.min(x1, x2), right = Math.max(x1, x2);
+    const top = Math.min(y1, y2), bottom = Math.max(y1, y2);
+    const matches = [];
+    for (const [lineIndex, line] of data.lines.entries()) {
+      if (line.fragments.some((part) =>
+        part.x < right && part.right > left &&
+        part.y - part.size * 0.35 >= top - part.size * 0.2 &&
+        part.y - part.size * 0.35 <= bottom + part.size * 0.2)) {
+        links[lineIndex].add(annotation);
+        matches.push(lineIndex);
+      }
+    }
+    if (!matches.length || annotation.url || !annotation.dest) continue;
+    const index = await destinationIndex(pdf, annotation.dest);
+    if (index === null || index === data.index) continue;
+    for (const lineIndex of matches) targets[lineIndex].add(index);
+  }
+  const entries = [];
+  let consumed = -1;
+  for (let i = 0; i < data.lines.length; i++) {
+    if (i <= consumed || targets[i].size !== 1) continue;
+    const index = [...targets[i]][0];
+    let start = i, end = i;
+    while (start > consumed + 1 && !links[start - 1].size &&
+      wrapsLine(data.lines[start - 1], data.lines[start])) start--;
+    while (end + 1 < data.lines.length &&
+      (!links[end + 1].size || (targets[end + 1].size === 1 && targets[end + 1].has(index) &&
+        (pageLabel(data.lines[end + 1]) || [...links[end]].some((link) => links[end + 1].has(link))))) &&
+      wrapsLine(data.lines[end], data.lines[end + 1])) end++;
+    consumed = end;
+    const lines = data.lines.slice(start, end + 1), first = lines[0];
+    const title = linkedTitle(lines);
+    if (!title || title.length > 300 || title.split(" ").length > 40 || !/\p{L}/u.test(title) || contentsTitle(title) ||
+      /^(?:zurück(?:\s+(?:zum|zur)\s+(?:inhaltsverzeichnis|inhalt|übersicht))?|back(?:\s+to\s+(?:the\s+)?(?:contents|index|overview))?)$/iu.test(title)) continue;
+    entries.push({
+      title, index, x: first.x, y: first.y, size: first.size,
+      label: pageLabel(lines.at(-1)), number: chapterNumber(title), lines: lines.length,
+    });
+  }
+  return entries;
+}
+
+function directoryLayout(entries) {
+  return entries.length >= 2 && entries.filter((entry) =>
+    (entry.label || entry.number) && entries.some((other) => other !== entry &&
+      alignedEntries(other, entry) &&
+      (other.label || other.number))).length >= 2;
+}
+
+function alignedEntries(first, second) {
+  return Math.abs(first.size - second.size) <= 0.5 && Math.abs(first.x - second.x) <= second.size * 6;
+}
+
+function linkedOutline(pages, repeated) {
+  const candidates = pages.map((page) => {
+    const heading = page.lines.find((line) => contentsTitle(line.text));
+    const entries = page.links.filter((entry) => !heading || entry.y > heading.y);
+    const lines = page.lines.filter((line) => !contentsTitle(line.text) && !isRepeated(line, repeated) && /\p{L}/u.test(line.text));
+    const coverage = entries.reduce((count, entry) => count + entry.lines, 0) / Math.max(1, lines.length);
+    return { entries, heading: !!heading, coverage, index: page.index };
+  });
+  for (let start = 0; start < candidates.length; start++) {
+    const first = candidates[start];
+    if (!first.entries.length || (!first.heading && (first.coverage < 0.5 ||
+      !directoryLayout(first.entries.filter((entry) => entry.index > first.index))))) continue;
+    const group = [first];
+    let end = start;
+    while (end + 1 < candidates.length) {
+      const next = candidates[end + 1], previous = group.at(-1);
+      const compatible = next.coverage >= 0.5 && next.entries.every((entry) =>
+        previous.entries.some((other) => alignedEntries(other, entry)));
+      if (!next.entries.some((entry) => entry.index < start || entry.index > end + 1) ||
+        (!next.heading && !compatible)) break;
+      group.push(next);
+      end++;
+    }
+    const seen = new Set();
+    const entries = group.flatMap((page) => page.entries).filter((entry) => {
+      const key = `${entry.index}:${entry.title.toLocaleLowerCase()}`;
+      if ((entry.index >= start && entry.index <= end) || (!first.heading && entry.index <= end) || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    if (entries.length < 2 || (!first.heading && !directoryLayout(entries))) continue;
+    const headings = entries.map((entry) => ({ ...entry, level: 1 }));
+    const ancestors = [];
+    for (const entry of headings) {
+      if (!entry.number) {
+        ancestors.length = 0;
+        continue;
+      }
+      while (ancestors.length && !entry.number.startsWith(`${ancestors.at(-1)}.`)) ancestors.pop();
+      entry.level = ancestors.length + 1;
+      ancestors.push(entry.number);
+    }
+    return buildTree(headings, 1);
+  }
+  return [];
+}
+
 function taggedHeadings(page, repeated) {
   const headings = [];
   const visit = (node) => {
@@ -154,10 +304,14 @@ function visualHeadings(pages, repeated) {
   }
   const styles = new Map();
   for (const candidate of candidates) {
-    if (!styles.has(candidate.style)) styles.set(candidate.style, new Set());
-    styles.get(candidate.style).add(candidate.title.toLocaleLowerCase());
+    if (!styles.has(candidate.style)) styles.set(candidate.style, { titles: new Set(), pages: new Set() });
+    styles.get(candidate.style).titles.add(candidate.title.toLocaleLowerCase());
+    styles.get(candidate.style).pages.add(candidate.index);
   }
-  const reliable = candidates.filter((candidate) => styles.get(candidate.style).size >= 2);
+  const reliable = candidates.filter((candidate) => {
+    const style = styles.get(candidate.style);
+    return style.titles.size >= 2 && style.pages.size >= 2;
+  });
   const levels = [...new Set(reliable.map((candidate) => Math.round(candidate.size * 2) / 2))].sort((a, b) => b - a);
   return reliable.map((candidate) => ({
     title: candidate.title, index: candidate.index,
@@ -165,8 +319,8 @@ function visualHeadings(pages, repeated) {
   }));
 }
 
-function buildTree(headings) {
-  if (new Set(headings.map((entry) => entry.title.toLocaleLowerCase())).size < 2) return [];
+function buildTree(headings, minimumTitles = 2) {
+  if (new Set(headings.map((entry) => entry.title.toLocaleLowerCase())).size < minimumTitles) return [];
   const entries = [], stack = [];
   for (const heading of headings) {
     const entry = { title: heading.title, index: heading.index, items: [], open: true };
@@ -182,12 +336,18 @@ export async function generateOutline(pdf) {
   for (let index = 0; index < pdf.numPages; index++) {
     const page = await pdf.getPage(index + 1);
     const content = await page.getTextContent({ includeMarkedContent: true });
-    const data = readPage(content, page.getViewport({ scale: 1 }), index);
-    data.tree = await page.getStructTree();
+    const viewport = page.getViewport({ scale: 1, rotation: 0 });
+    const data = readPage(content, viewport, index);
+    data.links = await linkedEntries(pdf, page, data, viewport);
+    data.source = page;
     pages.push(data);
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
   const repeated = repeatedEdges(pages);
-  const tagged = buildTree(pages.flatMap((page) => taggedHeadings(page, repeated)));
+  const linked = linkedOutline(pages, repeated);
+  if (linked.length) return linked;
+  for (const page of pages) page.tree = await page.source.getStructTree();
+  const headings = pages.flatMap((page) => taggedHeadings(page, repeated));
+  const tagged = new Set(headings.map((heading) => heading.index)).size >= 2 ? buildTree(headings) : [];
   return tagged.length ? tagged : buildTree(visualHeadings(pages, repeated));
 }

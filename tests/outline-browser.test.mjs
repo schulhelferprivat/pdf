@@ -26,6 +26,76 @@ async function openChapters(b, name = "Kapitel.pdf") {
   await b.wait(() => document.querySelectorAll(".page-item").length === 3 && !document.querySelector("#busy-dialog").open);
 }
 
+async function openLinkedContents(b, options = {}) {
+  await b.evaluate(async ({ bookmarks = false, rotated = false }) => {
+    const { pdfLib } = await import("./src/pdf/vendors.js");
+    const lib = await pdfLib(), doc = await lib.PDFDocument.create(), context = doc.context;
+    const pages = Array.from({ length: 6 }, () => doc.addPage([595, 842]));
+    pages[0].drawText("Dokumenttitel", { x: 40, y: 740, size: 28 });
+    pages[0].drawText("Untertitel", { x: 40, y: 700, size: 24 });
+    pages[0].drawText("Weitere Angaben zum Dokument", { x: 40, y: 650, size: 20 });
+    pages[1].drawText("Inhaltsverzeichnis", { x: 40, y: 780, size: 24 });
+    pages[1].drawText("1 Einleitung ........", { x: 40, y: 710, size: 12 });
+    pages[1].drawText("99", { x: 500, y: 710, size: 12 });
+    pages[1].drawText("1.1 Ein langer", { x: 55, y: 662, size: 12 });
+    pages[1].drawText("Kapiteltitel", { x: 55, y: 648, size: 12 });
+    pages[1].drawText("iv", { x: 500, y: 648, size: 12 });
+    pages[1].drawText("2 Ergebnisse", { x: 40, y: 600, size: 12 });
+    pages[1].drawText("101", { x: 500, y: 600, size: 12 });
+    pages[1].drawText("Defektes Ziel", { x: 40, y: 550, size: 12 });
+    pages[2].drawText("3 Ausblick", { x: 40, y: 750, size: 12 });
+    pages[2].drawText("102", { x: 500, y: 750, size: 12 });
+    for (const [index, title] of ["Einleitung", "Ergebnisse", "Ausblick"].entries()) {
+      const page = pages[index + 3];
+      page.drawText(title, { x: 40, y: 720, size: 24 });
+      for (let line = 0; line < 8; line++) {
+        page.drawText("Ein Absatz mit normalem Text beschreibt hier das aktuelle Thema.", {
+          x: 40, y: 680 - line * 18, size: 12,
+        });
+      }
+    }
+    const destination = (index) => context.obj([pages[index].ref, lib.PDFName.of("XYZ"), null, null, null]);
+    doc.catalog.set(lib.PDFName.of("Names"), context.obj({
+      Dests: { Names: [lib.PDFString.of("intro"), destination(3), lib.PDFString.of("last"), destination(5)] },
+    }));
+    const annotate = (page, rect, dest, action = false) => {
+      const annotation = { Type: "Annot", Subtype: "Link", Rect: rect, Border: [0, 0, 0] };
+      if (action) annotation.A = { S: "GoTo", D: dest };
+      else annotation.Dest = dest;
+      page.node.addAnnot(context.register(context.obj(annotation)));
+    };
+    annotate(pages[1], [500, 708, 520, 724], lib.PDFString.of("intro"), true);
+    annotate(pages[1], [40, 708, 200, 724], lib.PDFString.of("intro"));
+    annotate(pages[1], [500, 646, 520, 662], destination(3));
+    annotate(pages[1], [40, 598, 520, 614], destination(4));
+    annotate(pages[1], [40, 548, 220, 564], lib.PDFString.of("missing"));
+    annotate(pages[2], [40, 748, 520, 764], lib.PDFString.of("last"));
+    annotate(pages[3], [40, 718, 200, 734], destination(1));
+    if (rotated) {
+      pages[1].setRotation(lib.degrees(90));
+      pages[2].setRotation(lib.degrees(270));
+    }
+    if (bookmarks) {
+      const root = context.nextRef(), parent = context.nextRef(), child = context.nextRef();
+      context.assign(root, context.obj({ Type: "Outlines", First: parent, Last: parent, Count: 2 }));
+      context.assign(parent, context.obj({
+        Title: lib.PDFString.of("Originalkapitel"), Parent: root, Dest: destination(4),
+        First: child, Last: child, Count: 1,
+      }));
+      context.assign(child, context.obj({
+        Title: lib.PDFString.of("Originaldetails"), Parent: parent, Dest: destination(5),
+      }));
+      doc.catalog.set(lib.PDFName.of("Outlines"), root);
+    }
+    window.linkedContentsFile = new File([await doc.save()], "Verzeichnis.pdf", { type: "application/pdf" });
+    const transfer = new DataTransfer();
+    transfer.items.add(window.linkedContentsFile);
+    document.querySelector("#file-input").files = transfer.files;
+    document.querySelector("#file-input").dispatchEvent(new Event("change"));
+  }, options);
+  await b.wait(() => document.querySelectorAll(".page-item").length === 6 && !document.querySelector("#busy-dialog").open);
+}
+
 test("Browser: automatische PDF-Gliederung funktioniert offline mit Navigation und entfernten Seiten", { timeout: 90000 }, async (t) => {
   const b = await browser(t, { prefix: "/PDFHelper/" });
   await b.wait(() => !!navigator.serviceWorker.controller, 60000);
@@ -145,5 +215,71 @@ test("Browser: PDF-Strukturmarkierungen werden mit dem echten PDF.js ausgewertet
     { title: "Einleitung", index: 0, open: true, items: [{ title: "Details", index: 1, open: true, items: [] }] },
     { title: "Ergebnisse", index: 2, open: true, items: [] },
   ]);
+  assert.deepEqual(b.errors, []);
+});
+
+test("Browser: verlinktes Inhaltsverzeichnis funktioniert offline mit Hierarchie und Originalzielen", { timeout: 90000 }, async (t) => {
+  const b = await browser(t, { prefix: "/PDFHelper/" });
+  await b.wait(() => !!navigator.serviceWorker.controller, 60000);
+  await b.offline(true);
+  await b.navigate();
+  await b.wait(() => document.readyState === "complete" && !!document.querySelector("#welcome .icon"));
+  await openLinkedContents(b, { rotated: true });
+  assert.deepEqual(await b.evaluate(async () => {
+    const { Renderer } = await import("./src/pdf/renderer.js");
+    const renderer = new Renderer(new Map([["linked", { file: window.linkedContentsFile }]]), new Map());
+    try {
+      return await renderer.outline("linked");
+    } finally {
+      renderer.destroy();
+    }
+  }), [
+    { title: "1 Einleitung", index: 3, items: [{ title: "1.1 Ein langer Kapiteltitel", index: 3, items: [], open: true }], open: true },
+    { title: "2 Ergebnisse", index: 4, items: [], open: true },
+    { title: "3 Ausblick", index: 5, items: [], open: true },
+  ]);
+  await b.wait(() => document.querySelectorAll("#outline-list .outline-link").length === 4);
+  assert.deepEqual(await b.evaluate(() => [...document.querySelectorAll("#outline-list .outline-link")].map((link) => ({
+    title: link.textContent, index: link.dataset.index,
+  }))), [
+    { title: "1 Einleitung", index: "3" }, { title: "1.1 Ein langer Kapiteltitel", index: "3" },
+    { title: "2 Ergebnisse", index: "4" }, { title: "3 Ausblick", index: "5" },
+  ]);
+  assert.equal(await b.evaluate(() => document.querySelector("#outline-list li > ul .outline-link").textContent), "1.1 Ein langer Kapiteltitel");
+  await b.evaluate(() => document.querySelector('#outline-list [title="2 Ergebnisse"]').click());
+  await b.wait(() => document.querySelector("#current-page").value === "5");
+  await b.evaluate(() => document.querySelector('#outline-list [title="3 Ausblick"]').click());
+  await b.wait(() => document.querySelector("#current-page").value === "6");
+  await b.evaluate(() => document.querySelector("#page-list .page-item.current .thumbnail").dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true })));
+  await b.wait(() => document.querySelector('#outline-list [title="Seite nicht mehr im Dokument"]')?.textContent === "3 Ausblick");
+  await openBlankDocument(b);
+  await b.wait(() => document.querySelector("[data-side-section=outline]").hidden);
+  await selectDocument(b, 0);
+  await b.wait(() => document.querySelectorAll("#outline-list .outline-link").length === 4);
+  assert.deepEqual(b.errors, []);
+});
+
+test("Browser: echte PDF-Lesezeichen behalten Vorrang vor verlinktem Verzeichnis und Überschriften", { timeout: 90000 }, async (t) => {
+  const b = await browser(t);
+  await openLinkedContents(b, { bookmarks: true });
+  await b.wait(() => document.querySelectorAll("#outline-list .outline-link").length === 2);
+  assert.deepEqual(await b.evaluate(() => [...document.querySelectorAll("#outline-list .outline-link")].map((link) => link.textContent)), ["Originalkapitel", "Originaldetails"]);
+  await b.evaluate(() => document.querySelector('#outline-list [title="Originaldetails"]').click());
+  await b.wait(() => document.querySelector("#current-page").value === "6");
+  const result = await b.evaluate(async () => {
+    const { Renderer } = await import("./src/pdf/renderer.js");
+    const renderer = new Renderer(new Map([["original", { file: window.linkedContentsFile }]]), new Map());
+    try {
+      const pdf = await renderer.source("original");
+      pdf.getPage = () => { throw new Error("Keine Seitenanalyse bei vorhandenen Lesezeichen"); };
+      return await renderer.outline("original");
+    } finally {
+      renderer.destroy();
+    }
+  });
+  assert.deepEqual(result, [{
+    title: "Originalkapitel", index: 4, open: true,
+    items: [{ title: "Originaldetails", index: 5, items: [], open: false }],
+  }]);
   assert.deepEqual(b.errors, []);
 });
