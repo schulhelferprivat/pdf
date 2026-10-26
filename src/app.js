@@ -3696,6 +3696,10 @@ document.addEventListener("contextmenu", (event) => {
   event.preventDefault();
   closeContextMenu();
   if (
+    event.target.closest?.("#editor-topbar") &&
+    (navigator.userAgentData?.platform === "Windows" || /^Win/.test(navigator.platform))
+  ) return;
+  if (
     tool === "comment" &&
     $("page-scroll").contains(event.target) &&
     !editableField(event.target)

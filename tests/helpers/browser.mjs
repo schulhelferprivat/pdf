@@ -7,7 +7,7 @@ import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 export async function browser(
   t,
-  { prefix = "/", viewport = { width: 1440, height: 960 }, reducedMotion = true, toolbarPinned } = {},
+  { prefix = "/", viewport = { width: 1440, height: 960 }, reducedMotion = true, toolbarPinned, mouse = false } = {},
 ) {
   const root = fileURLToPath(new URL("../../", import.meta.url)),
     profile = await mkdtemp(join(tmpdir(), "pdfhelper-browser-"));
@@ -57,6 +57,7 @@ export async function browser(
       "--disable-gpu",
       "--disable-dev-shm-usage",
       "--disable-background-networking",
+      ...(mouse ? ["--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4"] : []),
       "--no-first-run",
       "--no-default-browser-check",
       "--remote-debugging-port=0",

@@ -5,7 +5,7 @@ import { readFile } from "node:fs/promises";
 import { browser as createBrowser } from "./helpers/browser.mjs";
 import { openBlankDocument } from "./helpers/documents.mjs";
 
-const browser = (t, options = {}) => createBrowser(t, { toolbarPinned: false, ...options });
+const browser = (t, options = {}) => createBrowser(t, { toolbarPinned: false, mouse: true, ...options });
 
 async function move(b, x, y) {
   await b.command("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
@@ -104,6 +104,46 @@ test("Browser: Toolbar bleibt beim Wechsel auf die Leiste und ihre Schaltfläche
   await settled(b, true);
   await move(b, 500, 300);
   await settled(b, false);
+  assert.deepEqual(b.errors, []);
+});
+
+test("Browser: Toolbar bleibt beim Wechsel in native Ziehbereiche sichtbar und lässt sich anpinnen", { timeout: 30000 }, async (t) => {
+  const b = await browser(t);
+  const css = await readFile(new URL("../src/ui/app.css", import.meta.url), "utf8");
+  b.override("src/ui/app.css", css.replaceAll("(display-mode: window-controls-overlay)", "(min-width: 0px)"));
+  await b.navigate();
+  await b.wait(() => document.querySelector("#editor-topbar")?.dataset.pinned === "false");
+  assert.equal(await b.evaluate(() => matchMedia("(hover: hover)").matches), true);
+  await move(b, 500, 300);
+  await settled(b, false);
+  await move(b, 500, 80);
+  await settled(b, true);
+  for (const [x, y] of [[500, 20], [700, 1], [800, 30]]) {
+    await b.evaluate(({ x, y }) => {
+      document.documentElement.dispatchEvent(new PointerEvent("pointerleave", {
+        pointerType: "mouse", clientX: x, clientY: y,
+      }));
+    }, { x, y });
+    assert.equal(await b.evaluate(() => document.querySelector(".app-shell").classList.contains("toolbar-visible")), true);
+    await settled(b, true);
+  }
+  await click(b, '[data-tool="select"]');
+  await settled(b, true);
+  await togglePin(b, "toolbar");
+  await move(b, 500, 300);
+  await settled(b, true);
+  assert.equal(await b.evaluate(() => document.querySelector("#editor-topbar").dataset.pinned), "true");
+  await togglePin(b, "toolbar");
+  for (const [x, y] of [[-1, 20], [500, -1], [1441, 20], [500, 961]]) {
+    await move(b, 500, 80);
+    await settled(b, true);
+    await b.evaluate(({ x, y }) => {
+      document.documentElement.dispatchEvent(new PointerEvent("pointerleave", {
+        pointerType: "mouse", clientX: x, clientY: y,
+      }));
+    }, { x, y });
+    await settled(b, false);
+  }
   assert.deepEqual(b.errors, []);
 });
 
@@ -228,6 +268,8 @@ test("Browser: Reduzierte Bewegung und Touch behalten die Toolbar bedienbar", { 
   assert.equal((await geometry(b)).top, 43);
   assert.equal(await b.evaluate(() => document.querySelector("#editor-topbar").dataset.pinned), "false");
   await b.command("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await b.navigate();
+  await b.wait(() => document.querySelector("#editor-topbar")?.dataset.pinned === "false");
   await settled(b, false);
   assert.equal((await geometry(b)).top, 0);
   assert.deepEqual(b.errors, []);
@@ -255,7 +297,7 @@ test("Browser: Toolbar blendet auch beim Wechsel in den EPUB-Buchinhalt aus", { 
   assert.deepEqual(b.errors, []);
 });
 
-test("Browser: Simulierte macOS- und Windows-Toolbars blenden vollständig aus und bleiben ziehbar", { timeout: 60000 }, async (t) => {
+test("Browser: Toolbars mit simulierten Fensterbuttons blenden vollständig aus und bleiben ziehbar", { timeout: 60000 }, async (t) => {
   const b = await browser(t);
   const css = await readFile(new URL("../src/ui/app.css", import.meta.url), "utf8");
   b.override("src/ui/app.css", css.replaceAll("(display-mode: window-controls-overlay)", "(min-width: 0px)"));
@@ -341,5 +383,40 @@ test("Browser: Simulierte macOS- und Windows-Toolbars blenden vollständig aus u
     }, { right }), true);
     await b.command("Emulation.setDeviceMetricsOverride", { width: 1440, height: 960, deviceScaleFactor: 1, mobile: false });
   }
+  assert.deepEqual(b.errors, []);
+});
+
+test("Browser: Windows-Toolbar unterdrückt App-Kontextmenüs und behält ihre Ziehbereiche", { timeout: 60000 }, async (t) => {
+  const b = await browser(t, { toolbarPinned: true });
+  const css = await readFile(new URL("../src/ui/app.css", import.meta.url), "utf8");
+  b.override("src/ui/app.css", css.replaceAll("(display-mode: window-controls-overlay)", "(min-width: 0px)"));
+  await b.command("Emulation.setUserAgentOverride", {
+    userAgent: await b.evaluate(() => navigator.userAgent),
+    platform: "Win32",
+  });
+  await b.navigate();
+  await b.wait(() => document.querySelector("#editor-topbar")?.dataset.pinned === "true");
+  await openBlankDocument(b);
+  for (const selector of ["#editor-topbar", "#save-button", '[data-tool="select"] .icon', "#document-title"]) {
+    const point = await b.evaluate((selector) => {
+      const rect = document.querySelector(selector).getBoundingClientRect();
+      return selector === "#editor-topbar" ? { x: rect.right - 3, y: rect.bottom - 3 }
+        : { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+    }, selector);
+    await move(b, point.x, point.y);
+    for (const type of ["mousePressed", "mouseReleased"])
+      await b.command("Input.dispatchMouseEvent", { type, ...point, button: "right", clickCount: 1 });
+    assert.equal(await b.evaluate(() => document.querySelector("#context-menu").matches(":popover-open")), false, selector);
+  }
+  await b.evaluate(() => document.querySelector("#editor-topbar").focus());
+  for (const [key, code, windowsVirtualKeyCode, modifiers] of [["ContextMenu", "ContextMenu", 93, 0], ["F10", "F10", 121, 8]]) {
+    for (const type of ["keyDown", "keyUp"])
+      await b.command("Input.dispatchKeyEvent", { type, key, code, windowsVirtualKeyCode, modifiers });
+    assert.equal(await b.evaluate(() => document.querySelector("#context-menu").matches(":popover-open")), false, key);
+  }
+  assert.deepEqual(await b.evaluate(() => [".toolbar-frame", "#editor-topbar"].map((selector) =>
+    getComputedStyle(document.querySelector(selector)).getPropertyValue("app-region"))), ["drag", "drag"]);
+  await togglePin(b, "sidebar");
+  assert.equal(await b.evaluate(() => document.querySelector("#pages-panel").dataset.pinned), "false");
   assert.deepEqual(b.errors, []);
 });

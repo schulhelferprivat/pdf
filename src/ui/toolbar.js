@@ -50,10 +50,7 @@ export function setupToolbar() {
     for (const type of ["pointermove", "pointerover"])
       frame.contentDocument?.addEventListener(type, (event) => pointerMove(event, frame), { capture: true, passive: true });
   }, true);
-  document.documentElement.addEventListener("pointerleave", () => {
-    nearTop = false;
-    sync();
-  });
+  document.documentElement.addEventListener("pointerleave", (event) => pointerMove(event));
   document.addEventListener("pointerdown", () => {
     keyboard = false;
     sync();
