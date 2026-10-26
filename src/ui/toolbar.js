@@ -6,6 +6,7 @@ export function setupToolbar() {
     noHover = matchMedia("(hover: none)"),
     menus = ["recent-menu", "history-menu", "tool-style-menu", "context-menu"]
       .map((id) => document.getElementById(id));
+  shell.classList.toggle("windows", navigator.userAgentData?.platform === "Windows" || /^Win/.test(navigator.platform));
   let pinned = readToolbarPinned(),
     nearTop = false,
     keyboard = true,
