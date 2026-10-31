@@ -1849,8 +1849,14 @@ input[type="radio"] {
   box-shadow: inset 0 -2px 0 var(--accent);
 }
 .side-section > .file-merge {
-  width: calc(100% - 16px);
+  width: 38px;
+  height: 38px;
+  padding: 6px;
   margin: 0 8px 9px;
+}
+.file-merge .icon {
+  width: 24px;
+  height: 24px;
 }
 .file-list .file-open {
   display: block;

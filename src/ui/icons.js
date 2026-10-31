@@ -32,6 +32,8 @@ const paths = {
     "M7 4h10a4 4 0 0 1 4 4v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4z M9 4v16",
   "list-tree": "M21 12h-8 M21 6H8 M21 18h-8 M3 6v4c0 1.1.9 2 2 2h3 M3 10v6c0 1.1.9 2 2 2h3",
   layers: "m12 3 10 5-10 5L2 8z M2 12l10 5 10-5 M2 16l10 5 10-5",
+  merge:
+    "M4.8 2C7.6 1.9 10.2 3.1 12 5.2 M4.8 4C7.5 3.9 9.5 5.1 10.9 7.1 M19.2 2C14.1 1.9 10 5.9 10 10.7V16H8.4L12 22.1 15.6 16H14V10.7C14 9.4 13.7 8.2 13.1 7.1 M19.2 4C15.3 3.9 12 6.9 12 10.7V16",
   shield: "m12 2 9 4v6c0 5-9 10-9 10S3 17 3 12V6z m-4 10 3 3 5-6",
   trash: "M3 6h18 M9 6V3h6v3 M6 6l1 15h10l1-15 M10 10v7 M14 10v7",
   copy: "M8 8h13v13H8z M16 8V3H3v13h5",
@@ -56,7 +58,9 @@ const paths = {
     "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z M9 7a2 2 0 1 0 0 4 2 2 0 0 0 0-4z m12 8-3.086-3.086a2 2 0 0 0-2.828 0L6 21",
 };
 export function icon(name) {
-  return `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${paths[name] || paths.file}"></path></svg>`;
+  const strokeWidth = name === "merge" ? 0.7 : 1.65;
+  const lineJoin = name === "merge" ? "miter" : "round";
+  return `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="${lineJoin}" aria-hidden="true"><path d="${paths[name] || paths.file}"></path></svg>`;
 }
 export function installIcons(root = document) {
   root.querySelectorAll("[data-icon]").forEach((element) => {
