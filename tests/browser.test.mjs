@@ -805,19 +805,21 @@ test(
         await openBlankDocument(b, 2);
         assert.deepEqual(
           await b.evaluate(() => {
-            const width = document
+            const page = document
                 .querySelector("#page-stage")
-                .getBoundingClientRect().width,
-              available = document.querySelector("#page-scroll").clientWidth;
+                .getBoundingClientRect(),
+              viewport = document.querySelector("#page-scroll");
             return {
               pressed: [...document.querySelectorAll("[data-zoom]")].map(
                 (button) => button.getAttribute("aria-pressed"),
               ),
-              fitsWidth:
-                width <= available && (available - width < 100 || width === 120),
+              fitsPage:
+                page.width > 0 && page.height > 0 &&
+                page.width <= viewport.clientWidth &&
+                page.height <= viewport.clientHeight,
             };
           }),
-          { pressed: ["true", "false"], fitsWidth: true },
+          { pressed: ["false", "true"], fitsPage: true },
         );
         await b.evaluate(() => {
           const thumb = () =>
