@@ -59,6 +59,8 @@ import { setupToolbar } from "./ui/toolbar.js";
 import { setupSidebar } from "./ui/sidebar.js";
 import { setupTableSelection } from "./ui/tables.js";
 import { readPdfDark, writePdfDark } from "./ui/settings.js";
+import { packDocument, unpackDocument } from "./core/document-transfer.js";
+import { documentDragType, parseDocumentDrag, setupWindowTransfer } from "./core/window-transfer.js";
 const $ = (id) => document.getElementById(id);
 const sources = new Map(),
   assets = new Map();
@@ -66,6 +68,10 @@ const documents = [];
 const linkHistory = new WeakMap();
 let updating = false;
 let splitting = false;
+let windowTransfer = null,
+  transferLocked = false,
+  transferDragDepth = 0,
+  detachedWindow = false;
 let activeId = null,
   tool = "select",
   selectedElement = null,
@@ -139,7 +145,7 @@ async function confirmAction(title, text, acceptLabel = "Fortfahren") {
   );
 }
 async function runJob(title, operation, { silent = false } = {}) {
-  if (busy) throw new Error("Bitte den laufenden Vorgang zuerst abschließen.");
+  if (busy || transferLocked) throw new Error("Bitte den laufenden Vorgang zuerst abschließen.");
   const controller = new AbortController();
   busy = controller;
   if (!silent) {
@@ -226,8 +232,8 @@ function revealSection(name, visible, open = true) {
   setHidden(section, !visible);
   $("pages-panel").classList.toggle(
     "expanded",
-    !!document.querySelector(
-      '.side-section:not([hidden], [data-side-section="annotations"])',
+    documents.length > 1 || transferDragDepth > 0 || !!document.querySelector(
+      '.side-section:not([hidden], [data-side-section="annotations"], [data-side-section="files"])',
     ),
   );
 }
@@ -487,7 +493,7 @@ function renderDocuments() {
     list.append(item);
   }
   $("file-count").textContent = String(documents.length);
-  revealSection("files", documents.length > 1);
+  revealSection("files", documents.length > 0 || transferDragDepth > 0);
   document.querySelector('[data-action="merge"]').disabled = documents.filter((doc) => doc.kind === "pdf").length < 2;
   renderTitle();
   renderAnnotations();
@@ -1035,25 +1041,53 @@ const fileDropAfter = (event, item) => {
 $("file-list").addEventListener("dragstart", (event) => {
   const item = fileItem(event);
   if (!item) return;
-  fileDrag = item.dataset.document;
+  if (busy || transferLocked || event.target.closest("input, .file-close")) {
+    event.preventDefault();
+    return;
+  }
+  const doc = documents.find((doc) => doc.id === item.dataset.document);
+  fileDrag = {
+    documentId: doc.id,
+    data: doc.kind === "pdf" ? windowTransfer?.offer(doc.id) : null,
+    cancelled: false,
+    handled: false,
+  };
   item.classList.add("dragging");
-  event.dataTransfer.setData("application/x-pdfhelper-document", fileDrag);
+  if (fileDrag.data) event.dataTransfer.setData(documentDragType, JSON.stringify(fileDrag.data));
+  else event.dataTransfer.setData("application/x-pdfhelper-local-document", doc.id);
   event.dataTransfer.effectAllowed = "move";
 });
+function isDocumentDrag(event) {
+  return [...(event.dataTransfer?.types || [])].includes(documentDragType);
+}
+function documentDropPosition(event) {
+  const item = fileItem(event);
+  return item ? { target: item.dataset.document, after: fileDropAfter(event, item) } : { target: null, after: true };
+}
 $("file-list").addEventListener("dragover", (event) => {
-  if (!fileDrag) return;
+  if (!fileDrag && !isDocumentDrag(event)) return;
   event.preventDefault();
   event.dataTransfer.dropEffect = "move";
   clearDropIndicators();
   const item = fileItem(event);
-  if (item && item.dataset.document !== fileDrag)
+  if (item && item.dataset.document !== fileDrag?.documentId)
     item.classList.add(fileDropAfter(event, item) ? "drop-after" : "drop-before");
 });
 $("file-list").addEventListener("drop", (event) => {
-  if (!fileDrag) return;
+  if (!fileDrag && !isDocumentDrag(event)) return;
   event.preventDefault();
+  event.stopPropagation();
+  hideDocumentDrop();
+  if (!fileDrag) {
+    const data = parseDocumentDrag(event.dataTransfer.getData(documentDragType));
+    clearDropIndicators();
+    if (data) void windowTransfer?.request(data, documentDropPosition(event)).catch(report);
+    return;
+  }
   const item = fileItem(event),
-    dragged = fileDrag;
+    dragged = fileDrag.documentId;
+  fileDrag.handled = true;
+  windowTransfer?.withdraw(fileDrag.data);
   endFileDrag();
   if (!item || item.dataset.document === dragged) return;
   const after = fileDropAfter(event, item),
@@ -1068,7 +1102,57 @@ function endFileDrag() {
     .querySelectorAll(".dragging")
     .forEach((item) => item.classList.remove("dragging"));
 }
-$("file-list").addEventListener("dragend", endFileDrag);
+$("file-list").addEventListener("dragend", (event) => {
+  const drag = fileDrag;
+  endFileDrag();
+  hideDocumentDrop();
+  if (!drag?.data || drag.handled || drag.cancelled || event.dataTransfer?.dropEffect !== "none") return;
+  const outside = event.clientX < 0 || event.clientY < 0 || event.clientX >= innerWidth || event.clientY >= innerHeight;
+  if (outside && Number.isFinite(event.screenX) && Number.isFinite(event.screenY) && (event.screenX !== 0 || event.screenY !== 0) &&
+      !windowTransfer.isClaimed(drag.data)) openDocumentWindow(drag.documentId, drag.data);
+});
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && fileDrag) fileDrag.cancelled = true;
+  if (transferLocked) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }
+}, true);
+function hideDocumentDrop() {
+  transferDragDepth = 0;
+  $("document-drop-overlay").hidden = true;
+  $("workspace").classList.remove("document-drag-over");
+  revealSection("files", documents.length > 0);
+}
+document.addEventListener("dragenter", (event) => {
+  if (!isDocumentDrag(event) || fileDrag) return;
+  event.preventDefault();
+  transferDragDepth++;
+  $("workspace").classList.add("document-drag-over");
+  revealSection("files", true);
+  document.querySelector('[data-side-section="files"]').open = true;
+  $("document-drop-overlay").hidden = documents.length > 0;
+});
+document.addEventListener("dragover", (event) => {
+  if (!isDocumentDrag(event) || fileDrag) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "move";
+});
+document.addEventListener("dragleave", () => {
+  if (transferDragDepth && --transferDragDepth === 0) hideDocumentDrop();
+});
+document.addEventListener("drop", (event) => {
+  if (!isDocumentDrag(event)) return;
+  if (fileDrag) fileDrag.handled = true;
+  const empty = documents.length === 0;
+  hideDocumentDrop();
+  clearDropIndicators();
+  event.preventDefault();
+  if (!empty || fileDrag) return;
+  const data = parseDocumentDrag(event.dataTransfer.getData(documentDragType));
+  if (data) void windowTransfer?.request(data, { target: null, after: true }).catch(report);
+});
+window.addEventListener("blur", hideDocumentDrop);
 $("file-list").addEventListener("keydown", (event) => {
   const button = event.target.closest(".file-open");
   if (
@@ -1084,6 +1168,7 @@ $("file-list").addEventListener("keydown", (event) => {
   $("file-list").querySelector(`.file-open[data-document="${id}"]`).focus();
 });
 async function closeDocument(doc) {
+  if (transferLocked) return;
   if (
     doc.dirty &&
     !(await confirmAction(
@@ -1092,6 +1177,9 @@ async function closeDocument(doc) {
     ))
   )
     return;
+  removeDocument(doc);
+}
+function removeDocument(doc) {
   linkHistory.delete(doc);
   documents.splice(documents.indexOf(doc), 1);
   doc.reader?.destroy();
@@ -1101,6 +1189,85 @@ async function closeDocument(doc) {
   syncSidebar();
   renderAll({ animate });
   collectResources();
+}
+function openDocumentWindow(documentId, offered = null) {
+  const doc = documents.find((doc) => doc.id === documentId);
+  if (!doc || doc.kind !== "pdf" || !windowTransfer || busy || transferLocked) return;
+  const data = offered || windowTransfer.offer(documentId), url = new URL(location.href);
+  url.hash = `pdfhelper-transfer=${encodeURIComponent(JSON.stringify(data))}`;
+  let child;
+  try { child = window.open(url.href, "_blank", "popup,width=1100,height=800"); } catch {}
+  if (!child) {
+    windowTransfer.withdraw(data);
+    message("Das neue Fenster wurde blockiert.", true);
+    clearTimeout(toastTimer);
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.id = "detach-retry";
+    retry.textContent = "In eigenem Fenster öffnen";
+    retry.addEventListener("click", () => openDocumentWindow(documentId));
+    $("toast").append(" ", retry);
+    return;
+  }
+  if ($("detach-retry")) setHidden($("toast"), true);
+  const started = Date.now(), timer = setInterval(() => {
+    if (child.closed || Date.now() - started > 30000 || !documents.includes(doc)) {
+      clearInterval(timer);
+      if (documents.includes(doc)) windowTransfer.cancel(data);
+    }
+  }, 250);
+}
+function setTransferLock(locked) {
+  if (locked && (busy || splitting || transferLocked || gesture || document.querySelector("dialog[open], .name-editor")))
+    throw new Error("Bitte den laufenden Vorgang zuerst abschließen.");
+  if (locked) {
+    document.activeElement?.blur();
+    finishTextEdit();
+    closeContextMenu();
+    closeHistory();
+  }
+  transferLocked = locked;
+  document.querySelector(".app-shell").inert = locked || updating;
+  $("document-transfer-status").hidden = !locked;
+}
+async function receiveDocument(packet, position, signal) {
+  if (documents.some((doc) => doc.id === packet.document.id)) throw new Error("Dieses PDF ist im Zielfenster bereits geöffnet.");
+  const restored = unpackDocument(packet, sources, assets);
+  const incomingRenderer = new Renderer(restored.sources, restored.assets);
+  const rollback = () => {
+    for (const source of restored.sources.values()) source.password = "";
+    for (const asset of restored.assets.values()) {
+      URL.revokeObjectURL(asset.url);
+      asset.bitmap?.close();
+    }
+  };
+  try {
+    const pdfs = new Map(await Promise.all([...restored.sources.keys()].map(async (id) => [id, await incomingRenderer.source(id)])));
+    for (const state of [restored.document, ...restored.document.history.past.map((entry) => entry.state), ...restored.document.history.future.map((entry) => entry.state)])
+      for (const page of state.pages)
+        if (page.sourceId && page.index >= pdfs.get(page.sourceId).numPages) throw new Error("Eine Seite fehlt in der übertragenen PDF-Quelle.");
+    for (const asset of restored.assets.values()) {
+      asset.bitmap = await createImageBitmap(asset.file);
+      if (asset.bitmap.width * asset.bitmap.height > limits.imagePixels) throw new Error("Das Bild hat mehr als 48 Megapixel.");
+    }
+    signal.throwIfAborted();
+    return {
+      rollback,
+      commit() {
+        for (const [id, source] of restored.sources) sources.set(id, source);
+        for (const [id, asset] of restored.assets) assets.set(id, asset);
+        const index = documents.findIndex((doc) => doc.id === position?.target);
+        documents.splice(index < 0 ? documents.length : index + Number(position.after), 0, restored.document);
+        activate(restored.document);
+        message("PDF aus dem anderen Fenster übernommen.");
+      },
+    };
+  } catch (error) {
+    rollback();
+    throw error;
+  } finally {
+    incomingRenderer.destroy();
+  }
 }
 let thumbnailObserver;
 const thumbnailQueue = [];
@@ -3730,7 +3897,10 @@ document.addEventListener("contextmenu", (event) => {
         fileName(doc),
         () => editName(named, doc.name, (value) => renameDocument(doc, value)),
         () => closeDocument(doc),
-        resetFormItem(doc),
+        [
+          ...(doc.kind === "pdf" && windowTransfer ? [contextItem("In eigenem Fenster öffnen", !!busy || transferLocked, async () => openDocumentWindow(doc.id))] : []),
+          ...resetFormItem(doc),
+        ],
       );
     else if (contextRegion(event.target)) showContextMenu(event, {}, []);
     return;
@@ -5482,6 +5652,7 @@ window.addEventListener("beforeunload", (event) => {
   }
 });
 window.addEventListener("pagehide", () => {
+  windowTransfer?.close();
   renderer.destroy();
   cleanupExports();
   for (const asset of assets.values()) {
@@ -5501,4 +5672,43 @@ setupPwa({
   message,
   actions,
 });
+if (typeof BroadcastChannel === "function") {
+  const appPath = new URL("../", import.meta.url).pathname;
+  windowTransfer = setupWindowTransfer({
+    channel: new BroadcastChannel(`pdfhelper:document-transfer:${appPath}`),
+    async prepare(id, signal) {
+      const doc = documents.find((doc) => doc.id === id);
+      if (!doc) throw new Error("Das PDF ist im Ausgangsfenster nicht mehr geöffnet.");
+      const packet = packDocument(doc, sources, assets);
+      for (const source of packet.sources) {
+        const file = new File([await readBytes(source.file, { signal })], source.file.name, {
+          type: source.file.type,
+          lastModified: source.file.lastModified,
+        });
+        signal.throwIfAborted();
+        source.file = file;
+        source.handle = null;
+        Object.assign(sources.get(source.id), { file, handle: null });
+      }
+      return packet;
+    },
+    receive: receiveDocument,
+    release(id) {
+      const doc = documents.find((doc) => doc.id === id);
+      if (doc) removeDocument(doc);
+      if (detachedWindow && !documents.length) setTimeout(() => window.close(), 0);
+    },
+    lock: setTransferLock,
+    report,
+  });
+  if (location.hash.startsWith("#pdfhelper-transfer=")) {
+    let data = null;
+    try { data = parseDocumentDrag(decodeURIComponent(location.hash.slice("#pdfhelper-transfer=".length))); } catch {}
+    history.replaceState(null, "", location.pathname + location.search);
+    if (data) {
+      detachedWindow = true;
+      void windowTransfer.request(data, { target: null, after: true }).catch(report);
+    }
+  }
+}
 renderAll();

@@ -216,6 +216,8 @@ test("Browser: Doppelseiten und horizontales Scrollen lösen die Sidebar niemals
     await settle(b, false);
   }
   await b.command("Input.dispatchKeyEvent", { type: "keyDown", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 });
+  await b.command("Input.dispatchKeyEvent", { type: "keyUp", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 });
+  await b.command("Page.bringToFront");
   await b.evaluate(() => document.querySelector("#pages-panel").focus());
   await settle(b, true);
   assert.deepEqual(b.errors, []);

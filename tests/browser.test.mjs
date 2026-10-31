@@ -2408,7 +2408,7 @@ test(
           .classList.contains("expanded"),
         inLeftPanel: !!document.querySelector("#pages-panel #outline-list"),
       })),
-      { files: true, expanded: true, inLeftPanel: true },
+      { files: false, expanded: true, inLeftPanel: true },
     );
     const outlineState = () =>
       b.evaluate(() => ({
@@ -2529,7 +2529,7 @@ test(
       () =>
         document.querySelectorAll("#file-list li").length === 1 &&
         document.querySelector("[data-side-section=outline]").hidden &&
-        document.querySelector("[data-side-section=files]").hidden &&
+        !document.querySelector("[data-side-section=files]").hidden &&
         !document.querySelector("#pages-panel").classList.contains("expanded"),
     );
     await b.evaluate(() => {
@@ -3531,6 +3531,7 @@ test(
     assert.deepEqual(await menu(), [
       "Umbenennen",
       "Dateinamen kopieren",
+      "In eigenem Fenster öffnen",
       "Schließen",
       "Toolbar entpinnen",
     ]);
@@ -3585,6 +3586,7 @@ test(
     assert.deepEqual(await menu(), [
       "Umbenennen",
       "Dateinamen kopieren",
+      "In eigenem Fenster öffnen",
       "Schließen",
       "Sidebar entpinnen",
     ]);

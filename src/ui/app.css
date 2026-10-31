@@ -1786,6 +1786,37 @@ input[type="radio"] {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-height: 30px;
+}
+.workspace.document-drag-over .file-list {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}
+.document-drop-overlay,
+.document-transfer-status {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: var(--panel);
+  color: var(--text);
+  pointer-events: none;
+}
+.document-drop-overlay {
+  background: var(--accent-soft);
+  border: 3px dashed var(--accent);
+}
+.document-transfer-status {
+  background: rgb(20 23 29 / 85%);
+  color: #fff;
+}
+.document-drop-overlay[hidden],
+.document-transfer-status[hidden] {
+  display: none;
 }
 .file-list li {
   display: flex;

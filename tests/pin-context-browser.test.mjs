@@ -65,11 +65,11 @@ test("Browser: Rechtsklick ergänzt genau eine Pin-Aktion auf Leisten, Buttons, 
   for (const [selector, label, prefix, corner] of [
     ["#editor-topbar", "Toolbar", [], true],
     ['[data-tool="select"]', "Toolbar", []],
-    ["#document-title", "Toolbar", ["Umbenennen", "Dateinamen kopieren", "Schließen"]],
+    ["#document-title", "Toolbar", ["Umbenennen", "Dateinamen kopieren", "In eigenem Fenster öffnen", "Schließen"]],
     ["#pages-panel", "Sidebar", [], true],
     ['[data-action="select-all"]', "Sidebar", []],
     [".thumbnail", "Sidebar", ["Links drehen", "Rechts drehen", "Nach vorne", "Nach hinten", "In neues Dokument kopieren"]],
-    ["#file-list .file-open", "Sidebar", ["Umbenennen", "Dateinamen kopieren", "Schließen"]],
+    ["#file-list .file-open", "Sidebar", ["Umbenennen", "Dateinamen kopieren", "In eigenem Fenster öffnen", "Schließen"]],
     [".annotation-entry", "Sidebar", ["Annotation löschen"]],
   ]) {
     await rightClick(b, selector, corner);

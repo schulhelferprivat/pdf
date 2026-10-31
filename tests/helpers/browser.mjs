@@ -7,7 +7,7 @@ import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 export async function browser(
   t,
-  { prefix = "/", viewport = { width: 1440, height: 960 }, reducedMotion = true, toolbarPinned, mouse = false } = {},
+  { prefix = "/", viewport = { width: 1440, height: 960 }, reducedMotion = true, toolbarPinned, mouse = true } = {},
 ) {
   const root = fileURLToPath(new URL("../../", import.meta.url)),
     profile = await mkdtemp(join(tmpdir(), "pdfhelper-browser-"));
@@ -169,7 +169,7 @@ export async function browser(
   const origin = `http://127.0.0.1:${server.address().port}`,
     url = origin + prefix;
   await command("Page.navigate", { url }, sessionId);
-  const evaluate = async (fn, argument) => {
+  const evaluateInSession = async (targetSession, fn, argument) => {
     const result = await command(
       "Runtime.evaluate",
       {
@@ -177,7 +177,7 @@ export async function browser(
         awaitPromise: true,
         returnByValue: true,
       },
-      sessionId,
+      targetSession,
     ).catch((error) => {
       throw new Error(`${error.message}\n${fn.toString()}`);
     });
@@ -188,7 +188,8 @@ export async function browser(
       );
     return result.result.value;
   };
-  async function wait(fn, timeout = 30000, argument) {
+  const evaluate = (fn, argument) => evaluateInSession(sessionId, fn, argument);
+  async function waitFor(evaluate, fn, timeout = 30000, argument) {
     const start = Date.now();
     while (Date.now() - start < timeout) {
       if (await evaluate(fn, argument)) return;
@@ -196,6 +197,7 @@ export async function browser(
     }
     throw new Error("Bedingung nicht erreicht: " + fn.toString());
   }
+  const wait = (fn, timeout, argument) => waitFor(evaluate, fn, timeout, argument);
   await wait(
     () =>
       document.readyState === "complete" &&
@@ -206,6 +208,24 @@ export async function browser(
     wait,
     errors,
     url,
+    targets: async () => (await command("Target.getTargets")).targetInfos,
+    attachWindow: async (targetId) => {
+      const { sessionId: targetSession } = await command("Target.attachToTarget", { targetId, flatten: true });
+      await command("Page.enable", {}, targetSession);
+      await command("Runtime.enable", {}, targetSession);
+      await configureMotion(targetSession);
+      socket.addEventListener("message", ({ data }) => {
+        const response = JSON.parse(data);
+        if (response.sessionId === targetSession && response.method === "Runtime.exceptionThrown")
+          errors.push(response.params.exceptionDetails.exception?.description || response.params.exceptionDetails.text);
+      });
+      const evaluate = (fn, argument) => evaluateInSession(targetSession, fn, argument);
+      return {
+        evaluate,
+        wait: (fn, timeout, argument) => waitFor(evaluate, fn, timeout, argument),
+        command: (method, params) => command(method, params, targetSession),
+      };
+    },
     override: (path, data) => overrides.set(path, data),
     newTab: async () => {
       const { targetId } = await command("Target.createTarget", {

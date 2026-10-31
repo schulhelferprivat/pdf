@@ -411,7 +411,7 @@ test("Browser: Windows-Toolbar bleibt ziehbar und öffnet eigene Kontextmenüs",
       await b.command("Input.dispatchMouseEvent", { type, ...point, button: "right", clickCount: 1 });
     assert.equal(await b.evaluate(() => document.querySelector("#context-menu").matches(":popover-open")), true, selector);
     assert.deepEqual(await b.evaluate(() => [...document.querySelectorAll("#context-menu button")].map((button) => button.textContent)),
-      selector === "#document-title" ? ["Umbenennen", "Dateinamen kopieren", "Schließen", "Toolbar entpinnen"] : ["Toolbar entpinnen"], selector);
+      selector === "#document-title" ? ["Umbenennen", "Dateinamen kopieren", "In eigenem Fenster öffnen", "Schließen", "Toolbar entpinnen"] : ["Toolbar entpinnen"], selector);
     for (const type of ["keyDown", "keyUp"])
       await b.command("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
   }

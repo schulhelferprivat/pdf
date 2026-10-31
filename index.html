@@ -630,6 +630,10 @@
             <span data-icon="folder"></span><strong>Dateien hier ablegen</strong
             ><span>PDF, JPG, PNG, WebP, TIFF, SVG oder EPUB · ausschließlich lokale Verarbeitung</span>
           </div>
+          <div class="document-drop-overlay" id="document-drop-overlay" hidden>
+            <strong>PDF hier ablegen</strong>
+            <span>Aus dem anderen PDFHelper-Fenster übernehmen</span>
+          </div>
         </main>
         <aside
           class="comments-panel"
@@ -676,6 +680,9 @@
       </div>
     </div>
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+    <div id="document-transfer-status" class="document-transfer-status" role="status" aria-live="polite" hidden>
+      PDF wird an das andere Fenster übergeben …
+    </div>
     <div
       id="context-menu"
       class="context-menu"
