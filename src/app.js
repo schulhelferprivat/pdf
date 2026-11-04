@@ -57,7 +57,6 @@ import { setHidden, setupDisclosures, fadeContent, cancelContentFade, holdEntran
 import { setupPanelResizing } from "./ui/panels.js";
 import { setupToolbar } from "./ui/toolbar.js";
 import { setupSidebar } from "./ui/sidebar.js";
-import { setupTableSelection } from "./ui/tables.js";
 import { readPdfDark, writePdfDark } from "./ui/settings.js";
 import { packDocument, unpackDocument } from "./core/document-transfer.js";
 import { documentDragType, parseDocumentDrag, setupWindowTransfer } from "./core/window-transfer.js";
@@ -95,16 +94,6 @@ const current = () =>
   active()?.pages.find((page) => page.id === active().current);
 const element = () =>
   current()?.elements.find((el) => el.id === selectedElement);
-const tableSelection = setupTableSelection($("page-stage"), {
-  page: current,
-  scale: () => scale,
-  tool: () => tool,
-  onSelect: () => {
-    selectedElement = null;
-    renderElements();
-    renderSettings();
-  },
-});
 installIcons();
 $("pdf-dark-button").setAttribute("aria-pressed", String(pdfDark));
 $("page-flow").classList.toggle("pdf-dark", pdfDark);
@@ -494,7 +483,10 @@ function renderDocuments() {
   }
   $("file-count").textContent = String(documents.length);
   revealSection("files", documents.length > 0 || transferDragDepth > 0);
-  document.querySelector('[data-action="merge"]').disabled = documents.filter((doc) => doc.kind === "pdf").length < 2;
+  const mergeButton = document.querySelector('[data-action="merge"]');
+  const canMerge = documents.filter((doc) => doc.kind === "pdf").length >= 2;
+  mergeButton.hidden = !canMerge;
+  mergeButton.disabled = !canMerge;
   renderTitle();
   renderAnnotations();
   renderComments();
@@ -1847,7 +1839,6 @@ async function renderPage({ animate = false, preserveNavigation = false } = {}) 
   cancelContentFade($("page-stage"));
   cancelContentFade($("welcome"));
   renderer.cancelMain();
-  tableSelection.reset();
   textLayer?.cancel();
   textLayer = null;
   $("text-layer").replaceChildren();
@@ -1994,12 +1985,6 @@ async function renderTextLayer(page, generation) {
   container.addEventListener("pointerdown", () =>
     container.classList.add("selecting"),
   );
-  let rules = [];
-  try {
-    rules = await renderer.tableRules(page);
-  } catch {}
-  if (generation !== renderGeneration) return;
-  tableSelection.render(layer, rules);
   applySearchHighlights();
 }
 const search = {
@@ -2204,13 +2189,13 @@ function openSearch() {
   if (!current()) return;
   const input = $("search-input"),
     selection = getSelection(),
-    selected = (tableSelection.selection?.text ?? selection?.toString() ?? "").trim(),
+    selected = (selection?.toString() ?? "").trim(),
     wasOpen = searchOpen();
   let refill = false;
   if (
     selected &&
     !selected.includes("\n") &&
-    (tableSelection.selection || $("text-layer").contains(selection.anchorNode))
+    $("text-layer").contains(selection.anchorNode)
   ) {
     refill = normalizeQuery(selected) !== normalizeQuery(input.value);
     input.value = selected;
@@ -3995,10 +3980,10 @@ document.addEventListener("contextmenu", (event) => {
     return;
   }
   const selection = getSelection(),
-    text = tableSelection.selection?.text ?? selection?.toString() ?? "";
+    text = selection?.toString() ?? "";
   if (
     text.trim() &&
-    (tableSelection.selection || $("page-stage").contains(selection.anchorNode)) &&
+    $("page-stage").contains(selection.anchorNode) &&
     !$("page-stage").hidden
   )
     showContextMenu(event, { text }, [
@@ -4049,10 +4034,7 @@ window.addEventListener("scroll", () => closeContextMenu(), true);
 window.addEventListener("resize", () => closeContextMenu());
 window.addEventListener("blur", () => closeContextMenu());
 function setTool(value) {
-  const pending = value === "highlight"
-    ? tableSelection.selection?.ranges ?? textSelection()
-    : null;
-  tableSelection.clear();
+  const pending = value === "highlight" ? textSelection() : null;
   finishTextEdit();
   tool = value;
   selectedElement = null;

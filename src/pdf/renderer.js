@@ -9,7 +9,6 @@ import {
   wrapText,
 } from "../core/geometry.js";
 import { destinationIndex, generateOutline } from "./outline.js";
-import { extractTableRules } from "./table-rules.js";
 import { darkenCanvas, darkTextColor } from "./dark.js";
 export class Renderer {
   constructor(sources, assets) {
@@ -317,12 +316,6 @@ export class Renderer {
         rotation: normalizeAngle((page.baseRotation || 0) + page.rotation),
       }),
     });
-  }
-  async tableRules(page) {
-    if (!page.sourceId) return [];
-    const lib = await pdfJs();
-    const { sourcePage } = await this.sourcePage(page);
-    return extractTableRules(await sourcePage.getOperatorList(), lib.OPS);
   }
   pageText(page) {
     if (!page.sourceId) return Promise.resolve(null);
