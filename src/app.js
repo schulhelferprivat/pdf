@@ -28,6 +28,7 @@ import {
   fitFontSize,
 } from "./core/geometry.js";
 import { findMatches, normalizeQuery } from "./core/search.js";
+import { detectTables, assembleLines } from "./core/columns.js";
 import { validateFile, normalizeImage, readBytes, fileTypes, fileAccept, fileExtension, documentName } from "./core/files.js";
 import { openEpub } from "./epub/reader.js";
 import {
@@ -87,7 +88,15 @@ let activeId = null,
   thumbnailGeneration = 0,
   toastTimer,
   pageDrag = null,
-  fileDrag = null;
+  fileDrag = null,
+  blockSelection = null,
+  blockGesture = null,
+  blockFrame = 0,
+  columnAnchor = null,
+  columnHover = null,
+  pageTables = [],
+  suppressBlockClick = false,
+  altGesture = false;
 const renderer = new Renderer(sources, assets);
 const active = () => documents.find((doc) => doc.id === activeId);
 const current = () =>
@@ -1844,8 +1853,12 @@ async function renderPage({ animate = false, preserveNavigation = false } = {}) 
   $("text-layer").replaceChildren();
   delete $("text-layer").dataset.page;
   $("link-layer").replaceChildren();
+  CSS.highlights?.delete("column-selection");
   const page = current(),
     doc = active();
+  pageTables = [];
+  setColumnHover(null);
+  if (blockSelection && blockSelection.pageId !== page?.id) clearBlockSelection();
   if (entrance && entrance.documentId !== doc?.id) dropEntrance();
   const entering = !!page && enteringDocument === doc?.id;
   if (doc?.id === enteringDocument) enteringDocument = null;
@@ -1898,6 +1911,7 @@ async function renderPage({ animate = false, preserveNavigation = false } = {}) 
   stage.style.height = `${size.height * scale}px`;
   stage.style.scale = "";
   stage.dataset.tool = tool;
+  renderBlockLayer();
   const old = $("page-canvas"),
     canvas = document.createElement("canvas"),
     keep =
@@ -1920,6 +1934,7 @@ async function renderPage({ animate = false, preserveNavigation = false } = {}) 
   const layersReady = Promise.all([
     renderTextLayer(page, generation),
     renderLinks(page, generation),
+    renderTables(page, generation),
   ]);
   try {
     await renderer.render(
@@ -1986,6 +2001,7 @@ async function renderTextLayer(page, generation) {
     container.classList.add("selecting"),
   );
   applySearchHighlights();
+  applyBlockSelection();
 }
 const search = {
   query: "",
@@ -2258,6 +2274,303 @@ $("page-stage").addEventListener("mouseup", (event) => {
 document.addEventListener("pointerup", () =>
   $("text-layer").classList.remove("selecting"),
 );
+async function renderTables(page, generation) {
+  let segments;
+  try {
+    segments = await renderer.rules(page);
+  } catch {
+    return;
+  }
+  if (generation !== renderGeneration) return;
+  pageTables = detectTables(
+    segments.map(([x1, y1, x2, y2]) => [
+      ...displayPoint(page, x1, y1),
+      ...displayPoint(page, x2, y2),
+    ]),
+  );
+}
+const blockTools = ["select", "block"];
+function columnAt(point) {
+  for (const [tableIndex, table] of pageTables.entries()) {
+    const offset = (point.y - table.top) * scale;
+    if (offset < -12 || offset > 4) continue;
+    const index = table.columns.findIndex(
+      (column) => point.x >= column.left && point.x <= column.right,
+    );
+    if (index >= 0) return { tableIndex, index };
+  }
+  return null;
+}
+function columnRect(tableIndex, from, to) {
+  const table = pageTables[tableIndex];
+  return {
+    x: table.columns[from].left,
+    y: table.top,
+    width: table.columns[to].right - table.columns[from].left,
+    height: table.bottom - table.top,
+  };
+}
+function setColumnHover(hit) {
+  const key = hit ? `${hit.tableIndex}:${hit.index}` : "";
+  if (key === (columnHover?.key ?? "")) return;
+  columnHover = hit
+    ? { ...hit, key, rect: columnRect(hit.tableIndex, hit.index, hit.index) }
+    : null;
+  $("page-stage").classList.toggle("column-target", !!hit);
+  renderBlockLayer();
+}
+function renderBlockLayer() {
+  const parts = [],
+    frame = (rect, className) => {
+      const box = document.createElement("div");
+      box.className = className;
+      box.style.left = `${rect.x * scale}px`;
+      box.style.top = `${rect.y * scale}px`;
+      box.style.width = `${rect.width * scale}px`;
+      box.style.height = `${rect.height * scale}px`;
+      parts.push(box);
+    };
+  if (columnHover) frame(columnHover.rect, "column-hint");
+  if (blockSelection && blockSelection.pageId === current()?.id)
+    frame(blockSelection.rect, blockGesture ? "block-frame dragging" : "block-frame");
+  $("block-layer").replaceChildren(...parts);
+}
+function collectBlock(rect) {
+  const stage = $("page-stage").getBoundingClientRect(),
+    bounds = {
+      left: stage.left + rect.x * scale,
+      top: stage.top + rect.y * scale,
+      right: stage.left + (rect.x + rect.width) * scale,
+      bottom: stage.top + (rect.y + rect.height) * scale,
+    },
+    inside = (box) => {
+      const x = (box.left + box.right) / 2,
+        y = (box.top + box.bottom) / 2;
+      return (
+        (box.width > 0 || box.height > 0) &&
+        x >= bounds.left &&
+        x <= bounds.right &&
+        y >= bounds.top &&
+        y <= bounds.bottom
+      );
+    },
+    ranges = [],
+    fragments = [],
+    probe = document.createRange(),
+    walker = document.createTreeWalker($("text-layer"), NodeFilter.SHOW_TEXT),
+    take = (node, start, end) => {
+      const range = document.createRange();
+      range.setStart(node, start);
+      range.setEnd(node, end);
+      const box = range.getBoundingClientRect();
+      ranges.push(range);
+      fragments.push({
+        text: node.data.slice(start, end),
+        x: box.left,
+        y: box.top,
+        width: box.width,
+        height: box.height,
+      });
+    };
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    if (!node.data.trim()) continue;
+    probe.selectNodeContents(node);
+    const box = probe.getBoundingClientRect();
+    if (
+      box.right < bounds.left ||
+      box.left > bounds.right ||
+      box.bottom < bounds.top ||
+      box.top > bounds.bottom
+    )
+      continue;
+    if (box.left >= bounds.left && box.right <= bounds.right && inside(box)) {
+      take(node, 0, node.length);
+      continue;
+    }
+    let start = -1;
+    for (let index = 0; index <= node.length; index++) {
+      let hit = false;
+      if (index < node.length) {
+        probe.setStart(node, index);
+        probe.setEnd(node, index + 1);
+        hit = inside(probe.getBoundingClientRect());
+      }
+      if (hit && start < 0) start = index;
+      else if (!hit && start >= 0) {
+        take(node, start, index);
+        start = -1;
+      }
+    }
+  }
+  return { ranges, text: assembleLines(fragments) };
+}
+function applyBlockSelection() {
+  cancelAnimationFrame(blockFrame);
+  blockFrame = 0;
+  CSS.highlights?.delete("column-selection");
+  const page = current();
+  if (
+    blockSelection &&
+    blockSelection.pageId === page?.id &&
+    $("text-layer").dataset.page === page.id
+  ) {
+    const { ranges, text } = collectBlock(blockSelection.rect);
+    blockSelection.text = text;
+    if (CSS.highlights && ranges.length)
+      CSS.highlights.set("column-selection", new Highlight(...ranges));
+  }
+  renderBlockLayer();
+}
+function clearBlockSelection() {
+  blockSelection = null;
+  blockGesture = null;
+  columnAnchor = null;
+  cancelAnimationFrame(blockFrame);
+  blockFrame = 0;
+  CSS.highlights?.delete("column-selection");
+  renderBlockLayer();
+}
+function selectColumns(hit, extend) {
+  let from = hit.index,
+    to = hit.index;
+  if (
+    extend &&
+    blockSelection?.pageId === current().id &&
+    columnAnchor?.tableIndex === hit.tableIndex
+  ) {
+    from = Math.min(columnAnchor.index, hit.index);
+    to = Math.max(columnAnchor.index, hit.index);
+  } else columnAnchor = hit;
+  blockSelection = {
+    pageId: current().id,
+    rect: columnRect(hit.tableIndex, from, to),
+    text: "",
+  };
+  applyBlockSelection();
+}
+function updateBlockGesture(point) {
+  const size = displayedSize(current()),
+    clampX = (value) => Math.max(0, Math.min(size.width, value)),
+    clampY = (value) => Math.max(0, Math.min(size.height, value)),
+    left = clampX(Math.min(blockGesture.start.x, point.x)),
+    right = clampX(Math.max(blockGesture.start.x, point.x)),
+    top = clampY(Math.min(blockGesture.start.y, point.y)),
+    bottom = clampY(Math.max(blockGesture.start.y, point.y));
+  blockSelection = {
+    pageId: current().id,
+    rect: { x: left, y: top, width: right - left, height: bottom - top },
+    text: "",
+  };
+  renderBlockLayer();
+  if (!blockFrame)
+    blockFrame = requestAnimationFrame(() => {
+      blockFrame = 0;
+      applyBlockSelection();
+    });
+}
+function finishBlockGesture(event) {
+  if (!blockGesture || event.pointerId !== blockGesture.pointerId) return;
+  blockGesture = null;
+  if (
+    event.type === "pointercancel" ||
+    !blockSelection ||
+    blockSelection.rect.width * scale < 3 ||
+    blockSelection.rect.height * scale < 3
+  ) {
+    clearBlockSelection();
+    return;
+  }
+  columnAnchor = null;
+  applyBlockSelection();
+}
+$("page-stage").addEventListener(
+  "pointerdown",
+  (event) => {
+    if (!blockTools.includes(tool) || event.button !== 0 || !current()) return;
+    const point = stagePosition(event),
+      drawing = event.altKey || tool === "block",
+      hit = event.altKey ? null : columnAt(point);
+    if (!hit && !drawing) {
+      if (blockSelection && !event.shiftKey) clearBlockSelection();
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    suppressBlockClick = true;
+    getSelection().removeAllRanges();
+    if (hit) {
+      selectColumns(hit, event.shiftKey);
+      return;
+    }
+    altGesture = event.altKey;
+    setColumnHover(null);
+    blockGesture = { start: point, pointerId: event.pointerId };
+    $("page-stage").setPointerCapture(event.pointerId);
+    updateBlockGesture(point);
+  },
+  true,
+);
+$("page-stage").addEventListener("pointermove", (event) => {
+  if (blockGesture) {
+    if (event.pointerId === blockGesture.pointerId)
+      updateBlockGesture(stagePosition(event));
+    return;
+  }
+  $("page-stage").classList.toggle("block-ready", event.altKey);
+  setColumnHover(
+    blockTools.includes(tool) && !event.buttons && !event.altKey && current()
+      ? columnAt(stagePosition(event))
+      : null,
+  );
+});
+$("page-stage").addEventListener("pointerleave", () => {
+  if (!blockGesture) setColumnHover(null);
+});
+$("page-stage").addEventListener("pointerup", finishBlockGesture);
+$("page-stage").addEventListener("pointercancel", finishBlockGesture);
+document.addEventListener("pointerdown", () => (suppressBlockClick = false), true);
+document.addEventListener(
+  "click",
+  (event) => {
+    if (!suppressBlockClick) return;
+    suppressBlockClick = false;
+    event.preventDefault();
+    event.stopPropagation();
+  },
+  true,
+);
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Alt") $("page-stage").classList.add("block-ready");
+});
+document.addEventListener("keyup", (event) => {
+  if (event.key !== "Alt") return;
+  $("page-stage").classList.remove("block-ready");
+  if (altGesture) {
+    altGesture = false;
+    event.preventDefault();
+  }
+});
+window.addEventListener("blur", () =>
+  $("page-stage").classList.remove("block-ready"),
+);
+function blockText() {
+  return blockSelection?.text && blockSelection.pageId === current()?.id
+    ? blockSelection.text
+    : "";
+}
+document.addEventListener("copy", (event) => {
+  const text = blockText(),
+    selection = getSelection();
+  if (
+    !text ||
+    document.activeElement?.closest?.("input, textarea, select, [contenteditable=true]") ||
+    (selection && !selection.isCollapsed)
+  )
+    return;
+  event.preventDefault();
+  event.clipboardData.setData("text/plain", text);
+});
 async function renderLinks(page, generation) {
   let links;
   try {
@@ -2716,6 +3029,10 @@ function updateToolCursors() {
   stage.style.setProperty(
     "--cursor-draw",
     cursorIcon("pen", { color: toolStyles.draw.color, hotspot: [3, 21] }),
+  );
+  stage.style.setProperty(
+    "--cursor-column",
+    cursorIcon("column-arrow", { hotspot: [12, 21], fallback: "s-resize" }),
   );
   stage.style.setProperty(
     "--cursor-highlight",
@@ -3979,6 +4296,12 @@ document.addEventListener("contextmenu", (event) => {
     showContextMenu(event, {}, []);
     return;
   }
+  if (blockText() && $("page-stage").contains(event.target)) {
+    showContextMenu(event, { text: blockText() }, [
+      contextItem("Kopieren", false, copyContext),
+    ]);
+    return;
+  }
   const selection = getSelection(),
     text = selection?.toString() ?? "";
   if (
@@ -4036,6 +4359,8 @@ window.addEventListener("blur", () => closeContextMenu());
 function setTool(value) {
   const pending = value === "highlight" ? textSelection() : null;
   finishTextEdit();
+  clearBlockSelection();
+  setColumnHover(null);
   tool = value;
   selectedElement = null;
   document.querySelectorAll("[data-tool]").forEach((button) => {

@@ -106,6 +106,14 @@
                 title="Auswahl"
                 aria-pressed="true"
               ></button>
+              <button
+                data-tool="block"
+                data-icon="select-block"
+                class="icon-button document-action"
+                aria-label="Bereich kopieren"
+                title="Bereich kopieren (Rechteck aufziehen, dann Strg/⌘ C)"
+                aria-pressed="false"
+              ></button>
               <span class="tool-split"
                 ><button
                   data-tool="text"
@@ -516,6 +524,7 @@
               <div id="link-layer" class="link-layer"></div>
               <div id="form-layer" class="form-layer"></div>
               <div id="element-layer" class="element-layer"></div>
+              <div id="block-layer" class="block-layer" aria-hidden="true"></div>
               <div id="interaction-layer" class="interaction-layer"></div>
               <p class="page-loading" id="page-loading" hidden>
                 Seite wird geladen …

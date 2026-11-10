@@ -10,6 +10,7 @@ import {
 } from "../core/geometry.js";
 import { destinationIndex, generateOutline } from "./outline.js";
 import { darkenCanvas, darkTextColor } from "./dark.js";
+import { ruleSegments } from "../core/columns.js";
 export class Renderer {
   constructor(sources, assets) {
     this.sources = sources;
@@ -22,6 +23,7 @@ export class Renderer {
     this.thumbnailCanvases = new Map();
     this.outlines = new Map();
     this.texts = new Map();
+    this.rulings = new Map();
     this.imageRotations = new WeakMap();
   }
   async source(id) {
@@ -346,6 +348,32 @@ export class Renderer {
     }
     return this.texts.get(key);
   }
+  rules(page) {
+    if (!page.sourceId) return Promise.resolve([]);
+    const key = `${page.sourceId}:${page.index}`;
+    if (!this.rulings.has(key)) {
+      const promise = (async () => {
+        this.uses.set(page.sourceId, (this.uses.get(page.sourceId) || 0) + 1);
+        try {
+          const lib = await pdfJs();
+          const { sourcePage } = await this.sourcePage(page);
+          const { fnArray, argsArray } = await sourcePage.getOperatorList({
+            annotationMode: lib.AnnotationMode.DISABLE,
+          });
+          return ruleSegments(fnArray, argsArray, lib.OPS);
+        } finally {
+          this.uses.set(
+            page.sourceId,
+            Math.max(0, (this.uses.get(page.sourceId) || 1) - 1),
+          );
+          this.trim();
+        }
+      })();
+      this.rulings.set(key, promise);
+      promise.catch(() => this.rulings.delete(key));
+    }
+    return this.rulings.get(key);
+  }
   async links(page) {
     if (!page.sourceId) return [];
     this.uses.set(page.sourceId, (this.uses.get(page.sourceId) || 0) + 1);
@@ -436,8 +464,9 @@ export class Renderer {
   async disposeUnused(ids) {
     for (const id of this.outlines.keys())
       if (!ids.has(id)) this.outlines.delete(id);
-    for (const key of this.texts.keys())
-      if (!ids.has(key.slice(0, key.lastIndexOf(":")))) this.texts.delete(key);
+    for (const cache of [this.texts, this.rulings])
+      for (const key of cache.keys())
+        if (!ids.has(key.slice(0, key.lastIndexOf(":")))) cache.delete(key);
     for (const [id, promise] of this.documents)
       if (!ids.has(id) && !this.uses.get(id)) {
         this.documents.delete(id);

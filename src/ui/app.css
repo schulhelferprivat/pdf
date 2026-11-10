@@ -1280,6 +1280,44 @@ body.resizing-panels * {
 .textLayer ::selection {
   background: #2f7fd94d;
 }
+.textLayer ::highlight(column-selection) {
+  background: #2f7fd94d;
+}
+.block-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+.block-frame,
+.column-hint {
+  position: absolute;
+  box-sizing: border-box;
+  border-radius: 2px;
+}
+.block-frame {
+  border: 1px solid #2f7fd9b3;
+}
+.block-frame.dragging {
+  border-style: dashed;
+  background: #2f7fd914;
+}
+.column-hint {
+  border: 1px dashed #2f7fd999;
+  background: #2f7fd90f;
+}
+.page-stage.block-ready[data-tool="select"],
+.page-stage.block-ready[data-tool="select"] :is(.textLayer, .textLayer :is(span, br), .textLayer .endOfContent, .link-layer a, .annotation) {
+  cursor: crosshair;
+}
+.page-stage[data-tool="block"] .interaction-layer {
+  pointer-events: auto;
+  cursor: crosshair;
+}
+.page-stage.column-target:not(.block-ready):is([data-tool="select"], [data-tool="block"]),
+.page-stage.column-target:not(.block-ready):is([data-tool="select"], [data-tool="block"]) * {
+  cursor: var(--cursor-column, s-resize);
+}
 .textLayer br::selection {
   background: transparent;
 }
