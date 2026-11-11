@@ -199,6 +199,7 @@ export async function renderOutput(
   return { outputs, reduced };
 }
 let printCleanup = null;
+export const printing = () => printCleanup !== null;
 export async function printOutputs(outputs, job) {
   if (printCleanup)
     throw new Error(

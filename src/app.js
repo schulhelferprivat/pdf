@@ -49,6 +49,7 @@ import {
   zipOutputs,
   renderOutput,
   printOutputs,
+  printing,
   cleanupExports,
 } from "./pdf/export.js";
 import { layoutPlan } from "./pdf/layout.js";
@@ -67,6 +68,7 @@ const sources = new Map(),
 const documents = [];
 const linkHistory = new WeakMap();
 let updating = false;
+let nativePrint = false;
 let splitting = false;
 let windowTransfer = null,
   transferLocked = false,
@@ -5901,6 +5903,16 @@ document.addEventListener("keydown", (event) => {
     );
     return;
   }
+  if (
+    (event.ctrlKey || event.metaKey) &&
+    !event.altKey &&
+    !event.shiftKey &&
+    key === "p"
+  ) {
+    event.preventDefault();
+    Promise.resolve(actions.print()).catch(report);
+    return;
+  }
   if (current() && !document.querySelector("dialog[open]")) {
     if ((event.ctrlKey || event.metaKey) && !event.altKey && key === "f") {
       event.preventDefault();
@@ -5949,6 +5961,18 @@ document.addEventListener("keydown", (event) => {
   }
 });
 window.addEventListener("pdfhelper-update", () => (updating = true));
+window.addEventListener("beforeprint", () => {
+  if (!printing()) nativePrint = true;
+});
+window.addEventListener("afterprint", () => {
+  if (!nativePrint) return;
+  nativePrint = false;
+  setTimeout(() => {
+    const doc = active();
+    if (doc?.kind === "pdf" && doc.pages.length && !busy)
+      Promise.resolve(actions.print()).catch(report);
+  }, 0);
+});
 window.addEventListener("pageshow", (event) => {
   if (event.persisted) location.reload();
 });

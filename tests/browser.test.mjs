@@ -525,7 +525,10 @@ test(
       true,
     );
     await b.evaluate(() => {
+      window.printCalls = 0;
       window.print = () => {
+        window.printCalls++;
+        window.dispatchEvent(new Event("beforeprint"));
         window.printedPages =
           document.querySelectorAll(".print-page img").length;
         window.dispatchEvent(new Event("afterprint"));
@@ -537,6 +540,43 @@ test(
       await b.evaluate(() => document.querySelectorAll(".print-area").length),
       0,
     );
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.equal(await b.evaluate(() => window.printCalls), 1);
+    assert.equal(
+      await b.evaluate(() => {
+        window.printedPages = 0;
+        const event = new KeyboardEvent("keydown", {
+          key: "p",
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        });
+        document.body.dispatchEvent(event);
+        return event.defaultPrevented;
+      }),
+      true,
+    );
+    await b.wait(() => window.printedPages === 2);
+    await b.wait(() => !document.querySelector(".print-area"));
+    await b.evaluate(() => {
+      window.printedPages = 0;
+      window.dispatchEvent(new Event("beforeprint"));
+      window.dispatchEvent(new Event("afterprint"));
+    });
+    await b.wait(() => window.printedPages === 2);
+    await b.wait(() => !document.querySelector(".print-area"));
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.equal(await b.evaluate(() => window.printCalls), 3);
+    await b.command("Emulation.setEmulatedMedia", { media: "print" });
+    assert.deepEqual(
+      await b.evaluate(() => ({
+        fallback: getComputedStyle(document.querySelector(".print-fallback"))
+          .display,
+        shell: getComputedStyle(document.querySelector(".app-shell")).display,
+      })),
+      { fallback: "block", shell: "none" },
+    );
+    await b.command("Emulation.setEmulatedMedia", { media: "" });
     assert.deepEqual(b.errors, []);
   },
 );

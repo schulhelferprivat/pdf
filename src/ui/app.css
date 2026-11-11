@@ -2480,7 +2480,8 @@ details p {
 .comments-panel.resizing {
   transition: none;
 }
-.print-area {
+.print-area,
+.print-fallback {
   display: none;
 }
 [hidden] {
@@ -2796,6 +2797,19 @@ textarea,
   }
   body > .print-area {
     display: block !important;
+  }
+  body:not(:has(> .print-area)) > .print-fallback {
+    display: block !important;
+    padding: 2cm;
+    color: #000;
+    background: #fff;
+    font-family: Noto, sans-serif;
+    font-size: 12pt;
+    line-height: 1.5;
+  }
+  .print-fallback h1 {
+    font-size: 18pt;
+    margin: 0 0 12pt;
   }
   .print-page {
     margin: 0;
